@@ -1,4 +1,4 @@
-# Australian Housing Disability Monte Carlo Model
+# Accessing the Future: Monte Carlo Model
 
 This repository contains a Monte Carlo simulation model used to estimate the likelihood that Australian dwellings will, over their lifetime, be occupied by a household that includes a person with disability.
 
@@ -91,4 +91,4 @@ This model is intended for housing policy analysis and long-run planning. It is 
 
 ## Licence and citation
 
-Add licence and citation details here.
+Please cite the accompanying paper if you use or adapt this model.
