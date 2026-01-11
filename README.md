@@ -13,6 +13,7 @@ The model supports research on accessible and inclusive housing design in the co
 ├── au_housing_disability_monte_carlo.py   # Core simulation engine
 ├── run_from_excel.py                     # Runner script (loads inputs and runs scenarios)
 ├── inputs/                               # Input data (Excel files; not included in this repo by default)
+│   └── data for modelling.xlsx           # Source data for model parameters
 └── outputs/                              # Model outputs (generated when run)
 ```
 
