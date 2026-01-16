@@ -13,9 +13,9 @@ The model supports research on accessible and inclusive housing design in the co
 ├── au_housing_disability_monte_carlo.py  # Core simulation engine
 ├── run_from_excel.py                     # Runner script (loads inputs and runs scenarios)
 ├── inputs/                               # Input data (Excel files; not included in this repo by default)
-│   └── data for modelling.xlsx           # Source data for model parameters
+│   └── Data for modelling.xlsx           # Source data for model parameters
 ├── reference/                            # Background data not directly used in the simulation 
-│   └── Summer Foundation - Household disability data - SDAC22.xlsx           # ABS-provided raw data, used to create 'data for modelling.xlsx'
+│   └── Summer Foundation - Household disability data - SDAC22.xlsx           # ABS-provided raw data, used to create 'Data for modelling.xlsx'
 └── outputs/                              # Model outputs (generated when run)
 ```
 
@@ -70,7 +70,7 @@ python3 run_from_excel.py --n-props 1000
 - `--n-props`: Number of dwellings to simulate (default: 376000)
 - `--horizon-years`: Simulation horizon in years (default: 50)
 - `--seed`: Random seed for reproducibility
-- `--input-excel`: Path to Excel file containing model inputs
+- `--excel`: Path to Excel file containing model inputs
 
 To see all options:
 

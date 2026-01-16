@@ -29,12 +29,10 @@ from typing import Dict, List, Tuple, Optional
 
 import numpy as np
 import time
-import re
 
 BRACKETS: List[str] = ["15-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75+"]
 BRACKET_IDX = {b: i for i, b in enumerate(BRACKETS)}
 
-DEFAULT_START_YEAR = 2029
 DEFAULT_HORIZON_YEARS = 50
 
 
@@ -88,7 +86,6 @@ class InMoverDist:
 @dataclass(frozen=True)
 class SimParams:
     n_props: int = 1_200_000
-    start_year: int = DEFAULT_START_YEAR
     horizon_years: int = DEFAULT_HORIZON_YEARS
     seed: int = 42
 
@@ -244,8 +241,19 @@ def make_profiles(all_rates: AllRates) -> Dict[str, object]:
     }
 
 
+def _prepare_cdf(name: str, probs: List[float]) -> np.ndarray:
+    """Validate and compute CDF once for a probability vector."""
+    p = _validate_probs(name, probs)
+    return np.cumsum(p)
+
+
+def _sample_from_cdf(cdf: np.ndarray, rng: np.random.Generator) -> int:
+    """Sample an index using a pre-computed CDF (no validation)."""
+    return int(np.searchsorted(cdf, rng.random(), side="right"))
+
+
 def sample_from_discrete(probs: List[float], rng: np.random.Generator) -> int:
-    """Sample an index from a probability vector."""
+    """Sample an index from a probability vector. Validates on each call - prefer _prepare_cdf + _sample_from_cdf for hot loops."""
     p = _validate_probs("sample_from_discrete.probs", probs)
     cdf = np.cumsum(p)
     u = rng.random()
@@ -284,6 +292,8 @@ def run_sim(
     inmovers: InMoverDist,
     general_pop_probs: Optional[Dict[str, float]] = None,
     return_time_stats: bool = False,
+    debug_age_boundary: bool = False,
+    debug_print_limit: int = 20,
 ) -> Dict[str, float]:
     """
     Run the Monte Carlo simulation over n_props dwellings.
@@ -291,8 +301,6 @@ def run_sim(
     Returns a summary dict of probabilities (and optional time stats).
     """
 
-    DEBUG_AGE_BOUNDARY = False
-    DEBUG_PRINT_LIMIT = 20
     debug_prints_done = 0
 
     rng = np.random.default_rng(params.seed)
@@ -357,18 +365,23 @@ def run_sim(
         return float(hi - age + 1)           # e.g. 35->10 years; 44->1 year
 
 
-    # Helper: choose first bracket
+    # Pre-compute CDFs for probability vectors (validate once, not on every sample)
     inmover_vec = [float(inmovers.probs_by_bracket[b]) for b in BRACKETS]
+    inmover_cdf = _prepare_cdf("inmover", inmover_vec)
+
     if general_pop_probs is not None:
         general_vec = [float(general_pop_probs[b]) for b in BRACKETS]
+        general_cdf = _prepare_cdf("general_pop", general_vec)
     else:
-        general_vec = None
+        general_cdf = None
+
+    tenure_cdfs = {b: _prepare_cdf(f"tenure_{b}", tenure.probs_by_bracket[b]) for b in BRACKETS}
 
     def pick_first_bracket() -> str:
         if params.first_draw_source == "general":
-            idx = sample_from_discrete(general_vec, rng)  # type: ignore[arg-type]
+            idx = _sample_from_cdf(general_cdf, rng)  # type: ignore[arg-type]
         else:
-            idx = sample_from_discrete(inmover_vec, rng)
+            idx = _sample_from_cdf(inmover_cdf, rng)
         return BRACKETS[idx]
 
     ever_any = np.zeros(params.n_props, dtype=bool)
@@ -402,7 +415,7 @@ def run_sim(
         t = 0.0
         br = pick_first_bracket()
         yrs_to_boundary = years_to_boundary_at_move_in(br)
-        if DEBUG_AGE_BOUNDARY and debug_prints_done < DEBUG_PRINT_LIMIT:
+        if debug_age_boundary and debug_prints_done < debug_print_limit:
             print(
                 f"[DEBUG] Move-in bracket={br}, "
                 f"yrs_to_boundary={yrs_to_boundary:.1f}"
@@ -431,8 +444,7 @@ def run_sim(
         # Dwelling occupancy lifecycle
         while t < float(params.horizon_years):
             # Draw tenure for current bracket
-            probs = tenure.probs_by_bracket[br]
-            b_idx = sample_from_discrete(probs, rng)
+            b_idx = _sample_from_cdf(tenure_cdfs[br], rng)
             dur = sample_tenure_years(t_buckets[b_idx], rng)
 
             # Extend tenure if disabled household (any/severe/physical)
@@ -462,7 +474,7 @@ def run_sim(
                 # If we've hit a bracket boundary, transition to next bracket and apply acquisitions
                 if yrs_to_boundary <= 1e-12 and br != "75+" and t < float(params.horizon_years):
                     next_br = BRACKETS[BRACKET_IDX[br] + 1]
-                    if DEBUG_AGE_BOUNDARY and debug_prints_done < DEBUG_PRINT_LIMIT:
+                    if debug_age_boundary and debug_prints_done < debug_print_limit:
                         print(f"[DEBUG] Aged into bracket {next_br} at t={t:.1f}")
 
                     became_any_now = False
@@ -510,9 +522,10 @@ def run_sim(
 
             # Tenure ended -> household moves out -> new household moves in
             if t < float(params.horizon_years):
-                br = pick_first_bracket()
+                # Subsequent households always use in-mover distribution
+                br = BRACKETS[_sample_from_cdf(inmover_cdf, rng)]
                 yrs_to_boundary = years_to_boundary_at_move_in(br)
-                if DEBUG_AGE_BOUNDARY and debug_prints_done < DEBUG_PRINT_LIMIT:
+                if debug_age_boundary and debug_prints_done < debug_print_limit:
                     print(
                         f"[DEBUG] Move-in bracket={br}, "
                         f"yrs_to_boundary={yrs_to_boundary:.1f}"
