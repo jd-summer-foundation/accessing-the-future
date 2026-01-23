@@ -100,7 +100,7 @@ def parse_args() -> argparse.Namespace:
         default=Path("outputs"),
         help="Output directory (will be created if missing).",
     )
-    ap.add_argument("--n-props", type=int, default=376_000, help="Number of dwellings to simulate.")
+    ap.add_argument("--n-props", type=int, default=44_346, help="Number of dwellings to simulate.")
     ap.add_argument("--seed", type=int, default=123, help="RNG seed.")
     ap.add_argument("--horizon-years", type=int, default=50, help="Simulation horizon in years.")
     ap.add_argument("--verbose", action="store_true", help="Print extra diagnostics.")
@@ -119,7 +119,7 @@ def main() -> None:
     # Column names (paper-linked data)
     age_col = "Age of Reference Person (Years)"
     inmover_col = "Of those who have length of tenure <1 year, what proportion are in each age bucket?"
-    genpop_col = "376k households"
+    genpop_col = "Age distribution"
 
     tenure_cols = [
         "Length of tenure: less than 1 year  (% of all households, not count)",

@@ -67,7 +67,7 @@ python3 run_from_excel.py --n-props 1000
 
 ## Command-line parameters
 
-- `--n-props`: Number of dwellings to simulate (default: 376000)
+- `--n-props`: Number of dwellings to simulate (default: 44346)
 - `--horizon-years`: Simulation horizon in years (default: 50)
 - `--seed`: Random seed for reproducibility
 - `--excel`: Path to Excel file containing model inputs
