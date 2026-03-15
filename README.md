@@ -1,97 +1,113 @@
-# Accessing the Future: Monte Carlo Model
+# Accessing the Future: Reproducible Research Package
 
-This repository contains a Monte Carlo simulation model used to estimate the likelihood that Australian dwellings will, over their lifetime, be occupied by a household that includes a person with disability.
+This repository contains a Monte Carlo simulation model estimating the likelihood that Australian dwellings will, over a 50-year horizon, be occupied by households including a person with disability or physical long-term health needs.
 
-The model supports research on accessible and inclusive housing design in the context of population ageing, household turnover, and long-lived housing stock.
+The repository now supports a raw-to-results workflow:
 
----
+1. Read the raw SDAC22 and housing mobility workbooks in `data/raw/`
+2. Build canonical processed model inputs in `data/processed/`
+3. Run the simulation scenarios into `results/`
+4. Generate paper-facing tables and figures into `reports/`
 
-## Repository structure
+## Quick Start
 
+Create a Python 3.13 environment, then install the pinned dependencies:
+
+```bash
+python3 -m pip install -r requirements.lock.txt
 ```
+
+Run the full workflow from the repository root:
+
+```bash
+make reproduce
+```
+
+That command will:
+
+1. Build `data/processed/model_inputs.csv`
+2. Validate the processed inputs against the raw source derivation
+3. Run the baseline scenarios into `results/baseline/`
+4. Generate manuscript artifacts in `reports/`
+
+## Canonical Commands
+
+```bash
+make build-data
+make validate-data
+make run-baseline
+make report
+make reproduce
+```
+
+For a fast smoke run:
+
+```bash
+make smoke
+```
+
+`make smoke` writes run outputs to `results/smoke/` and report artifacts to `reports/smoke/`.
+
+## Repository Layout
+
+```text
 .
-├── au_housing_disability_monte_carlo.py  # Core simulation engine
-├── run_from_excel.py                     # Runner script (loads inputs and runs scenarios)
-├── inputs/                               # Input data (Excel files; not included in this repo by default)
-│   └── Data for modelling.xlsx           # Source data for model parameters
-├── reference/                            # Background data not directly used in the simulation 
-│   └── Summer Foundation - Household disability data - SDAC22.xlsx           # ABS-provided raw data, used to create 'Data for modelling.xlsx'
-└── outputs/                              # Model outputs (generated when run)
+├── au_housing_disability_monte_carlo.py
+├── run_from_excel.py
+├── configs/
+├── data/
+│   ├── raw/
+│   └── processed/
+├── scripts/
+├── results/
+├── reports/
+└── tests/
 ```
 
----
+## Inputs -> Process -> Outputs
 
-## Overview
+### Inputs
+- Raw source workbook: [data/raw/sdac22_household_disability.xlsx](data/raw/sdac22_household_disability.xlsx)
+- Raw housing mobility workbook: [data/raw/2. Housing mobility.xlsx](data/raw/2.%20Housing%20mobility.xlsx)
+- Legacy processed workbook retained for migration checks: [data/processed/legacy_model_inputs.xlsx](data/processed/legacy_model_inputs.xlsx)
+- Version-controlled derivation rules: [configs/derivation.yaml](configs/derivation.yaml)
+- Version-controlled scenario definitions: [configs/baseline.yaml](configs/baseline.yaml)
 
-The model simulates a large number of dwellings over a fixed time horizon. For each dwelling, households move in and out over time according to observed tenure patterns. As households age while remaining in a dwelling, there is a probability that a person within the household acquires a disability, based on age-specific prevalence and transition rates.
+### Process
+- [scripts/build_model_inputs.py](scripts/build_model_inputs.py) extracts disability prevalence and household totals from SDAC22, tenure distributions from Housing Mobility Table 2.2, and derives the in-mover distribution from raw `<1 year` tenure counts by age.
+- [run_from_excel.py](run_from_excel.py) reads `data/processed/model_inputs.csv`, normalizes distributions, runs the four scenarios, and writes run manifests.
+- [scripts/generate_reports.py](scripts/generate_reports.py) converts scenario summaries into one table and two figures.
 
-Key features:
+### Outputs
+- `data/processed/model_inputs.csv`
+- `results/<run_name>/scenario_summaries.csv`
+- `results/<run_name>/inputs_used.csv`
+- `results/<run_name>/profiles_used.csv`
+- `results/<run_name>/run_manifest.json`
+- `reports/tables/table_01_scenario_summary.csv`
+- `reports/tables/table_01_scenario_summary.md`
+- `reports/figures/figure_01_ever_probabilities.png`
+- `reports/figures/figure_02_time_share.png`
 
-- Explicit simulation of household turnover within dwellings
-- Use of in-mover age distributions (rather than the general population)
-- Ageing of households while in place, with disability acquisition evaluated at age transitions
-- Persistence of disability status once acquired
-- Monte Carlo aggregation across many dwellings
+## Reproducibility Notes
 
----
+- Fixed defaults for the baseline run live in [configs/baseline.yaml](configs/baseline.yaml): `seed=123`, `n_props=44346`, `horizon_years=50`.
+- The processed CSV is deterministic and is validated against the current raw-source derivation on every `make validate-data`.
+- The run manifest records commit hash, dependency versions, input checksum, config checksum, and runtime parameters.
 
-## How the model works
+## Data Provenance
 
-1. A fixed number of dwellings are simulated over a specified horizon (default: 50 years).
-2. At the start of the simulation, a household moves into each dwelling.
-3. Households are assigned to an age bracket based on the age distribution of recent in-movers.
-4. Within each age bracket, households are randomly assigned an exact age.
-5. Each household remains in the dwelling for a stochastic tenure duration drawn from observed tenure distributions.
-6. If a household ages into an older age bracket while remaining in the dwelling, there is a chance that a person in the household acquires a disability.
-7. Once a household contains a person with disability, that status persists for the remainder of their occupancy.
-8. When a household moves out, a new household moves in until the simulation horizon is reached.
-9. Results are aggregated across all dwellings.
+The SDAC22 workbook contains the disability prevalence and total-household counts used by the model. The housing mobility workbook provides the tenure profile by age and the raw ingredients for deriving the in-mover distribution. The derivation details are documented in [data/provenance.md](data/provenance.md).
 
----
+## Testing
 
-## Running the model
+Run the automated test suite with:
 
-Run from the repository root:
-
-```
-python3 run_from_excel.py
-```
-
-### Quick sanity-check run
-
-```
-python3 run_from_excel.py --n-props 1000
-```
-
----
-
-## Command-line parameters
-
-- `--n-props`: Number of dwellings to simulate (default: 44346)
-- `--horizon-years`: Simulation horizon in years (default: 50)
-- `--seed`: Random seed for reproducibility
-- `--excel`: Path to Excel file containing model inputs
-
-To see all options:
-
-```
-python3 run_from_excel.py --help
+```bash
+python3 -m pytest
 ```
 
----
+## Citation and Archival Metadata
 
-## Outputs
-
-Outputs are written to the `outputs/` directory and include scenario summaries and copies of key inputs used in the run.
-
----
-
-## Intended use and limitations
-
-This model is intended for housing policy analysis and long-run planning. It is not intended for individual-level prediction or short-term forecasting.
-
----
-
-## Licence and citation
-
-Please cite the accompanying paper if you use or adapt this model.
+- Citation metadata: [CITATION.cff](CITATION.cff)
+- Zenodo metadata: [.zenodo.json](.zenodo.json)

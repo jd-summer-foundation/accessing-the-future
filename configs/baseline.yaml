@@ -1,0 +1,29 @@
+run:
+  name: baseline
+  input_path: data/processed/model_inputs.csv
+  output_dir: results/baseline
+  seed: 123
+  n_props: 44346
+  horizon_years: 50
+  return_time_stats: true
+
+input:
+  sheet: 0
+
+scenarios:
+  - name: main_inmover_first
+    first_draw_source: inmover
+    disabled_tenure_factor: 1.0
+    rate_scale: 1.0
+  - name: sens_general_first
+    first_draw_source: general
+    disabled_tenure_factor: 1.0
+    rate_scale: 1.0
+  - name: sens_disabled_tenure_1p2
+    first_draw_source: inmover
+    disabled_tenure_factor: 1.2
+    rate_scale: 1.0
+  - name: selection_scale_0p9
+    first_draw_source: inmover
+    disabled_tenure_factor: 1.0
+    rate_scale: 0.9

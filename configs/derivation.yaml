@@ -1,0 +1,72 @@
+raw_workbook: data/raw/sdac22_household_disability.xlsx
+housing_mobility_workbook: data/raw/2. Housing mobility.xlsx
+legacy_oracle_workbook: data/processed/legacy_model_inputs.xlsx
+processed_csv: data/processed/model_inputs.csv
+processed_excel: data/processed/model_inputs.xlsx
+
+raw_tables:
+  estimates_sheet: Table 1_1 Estimates
+  proportions_sheet: Table 1_3 Proportions
+  raw_label_column_index: 0
+
+age_brackets:
+  15-24: "15 - 24"
+  25-34: "25 - 34"
+  35-44: "35 - 44"
+  45-54: "45 - 54"
+  55-64: "55 - 64"
+  65-74: "65 - 74"
+  75+: "75 years or older"
+
+column_mappings:
+  DIP_any:
+    sheet: proportions
+    column_index: 1
+  DIP_severe:
+    sheet: proportions
+    column_index: 2
+  DIP_physical:
+    sheet: proportions
+    column_index: 4
+  DIP_physical2:
+    sheet: proportions
+    column_index: 5
+  "Age distribution":
+    sheet: estimates
+    column_index: 7
+    rounding: nearest_int
+
+housing_mobility_table:
+  tenure_sheet: Table 2.2
+  raw_label_column_index: 0
+  less_than_one_year_column_index: 1
+  estimated_households_column_index: 9
+  age_brackets:
+    15-24: "15 to 24"
+    25-34: "25 to 34"
+    35-44: "35 to 44"
+    45-54: "45 to 54"
+    55-64: "55 to 64"
+    65-74: "65 to 74"
+    75+: "75 and over"
+  tenure_columns:
+    "Length of tenure: less than 1 year  (% of all households, not count)":
+      column_index: 1
+    "Length of tenure: 1-2 years":
+      column_index: 2
+    "Length of tenure: 2-3 years":
+      column_index: 3
+    "Length of tenure: 3-4 years":
+      column_index: 4
+    "Length of tenure: 5-9 years":
+      column_index: 5
+    "Length of tenure: 10-19 years":
+      column_index: 6
+    "Length of tenure: 20+ years":
+      column_index: 7
+
+notes:
+  - "DIP_physical preserves the legacy model behavior and is sourced from the SDAC22 column for households with disability and a physical main long-term health condition."
+  - "Tenure distributions are extracted from Housing Mobility and Conditions, Australia: Summary of Results, 2019-20 Table 2.2."
+  - "In-mover distribution is derived from the estimated number of households in each age bracket with less than one year in the current dwelling, then normalised across age brackets."
+  - "Housing mobility Table 2.5 is intentionally unused because it collapses ages 65 and over into a single bin."

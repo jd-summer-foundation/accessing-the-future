@@ -1,3 +1,15 @@
 CLAUDE.md
 .DS_Store
-/outputs
+__pycache__/
+.pytest_cache/
+/results/*
+!/results/.gitkeep
+/reports/*
+!/reports/README.md
+!/reports/tables/
+!/reports/figures/
+/reports/tables/*
+!/reports/tables/.gitkeep
+/reports/figures/*
+!/reports/figures/.gitkeep
+/data/processed/model_inputs.xlsx

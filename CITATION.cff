@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+title: "Accessing the Future: Reproducible Monte Carlo Housing Disability Model"
+message: "If you use this software, please cite the repository metadata and associated preprint."
+type: software
+authors:
+  - family-names: Dignam
+    given-names: Joel
+version: 0.1.0
+license: "See LICENSE"
+abstract: "A reproducible research workflow for estimating the probability that Australian dwellings will host households including a person with disability over a 50-year horizon."
