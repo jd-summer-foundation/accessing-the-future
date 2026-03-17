@@ -17,7 +17,13 @@ Create a Python 3.13 environment, then install the pinned dependencies:
 python3 -m pip install -r requirements.lock.txt
 ```
 
-Run the full workflow from the repository root:
+Verify the canonical raw inputs before building anything:
+
+```bash
+make verify-data
+```
+
+Then run the full workflow from the repository root:
 
 ```bash
 make reproduce
@@ -25,14 +31,16 @@ make reproduce
 
 That command will:
 
-1. Build `data/processed/model_inputs.csv`
-2. Validate the processed inputs against the raw source derivation
-3. Run the baseline scenarios into `results/baseline/`
-4. Generate manuscript artifacts in `reports/`
+1. Verify the raw source workbooks against `data/checksums.sha256`
+2. Build `data/processed/model_inputs.csv`
+3. Validate the processed inputs against the raw source derivation
+4. Run the baseline scenarios into `results/baseline/`
+5. Generate manuscript artifacts in `reports/`
 
 ## Canonical Commands
 
 ```bash
+make verify-data
 make build-data
 make validate-data
 make run-baseline
@@ -92,6 +100,7 @@ make smoke
 ## Reproducibility Notes
 
 - Fixed defaults for the baseline run live in [configs/baseline.yaml](configs/baseline.yaml): `seed=123`, `n_props=44346`, `horizon_years=50`.
+- `make verify-data` checks the canonical raw workbooks listed in [data/checksums.sha256](data/checksums.sha256) before rebuilds.
 - The processed CSV is deterministic and is validated against the current raw-source derivation on every `make validate-data`.
 - The run manifest records commit hash, dependency versions, input checksum, config checksum, and runtime parameters.
 

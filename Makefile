@@ -2,12 +2,15 @@ PYTHON ?= python3
 BASELINE_CONFIG ?= configs/baseline.yaml
 SMOKE_CONFIG ?= configs/smoke.yaml
 
-.PHONY: build-data validate-data run-baseline report reproduce smoke test
+.PHONY: verify-data build-data validate-data run-baseline report reproduce smoke test
 
-build-data:
+verify-data:
+	$(PYTHON) scripts/verify_data.py
+
+build-data: verify-data
 	$(PYTHON) scripts/build_model_inputs.py
 
-validate-data:
+validate-data: verify-data
 	$(PYTHON) scripts/validate_inputs.py
 
 run-baseline: build-data

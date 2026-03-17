@@ -13,8 +13,9 @@
 ## Workflow
 
 ```bash
+make verify-data
 make build-data
 make validate-data
 ```
 
-`make build-data` regenerates `model_inputs.csv` from the raw workbooks and the derivation config. `make validate-data` checks schema, bracket ordering, probability sanity, and agreement with the raw-derived build output.
+`make verify-data` checks the canonical raw workbook checksums recorded in [checksums.sha256](checksums.sha256). `make build-data` regenerates `model_inputs.csv` from the raw workbooks and the derivation config. `make validate-data` checks schema, bracket ordering, probability sanity, and agreement with the raw-derived build output.
