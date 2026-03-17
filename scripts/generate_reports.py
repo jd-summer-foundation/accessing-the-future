@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.pipeline_utils import DEFAULT_REPORTS_DIR, DEFAULT_RESULTS_DIR, utc_now_iso, write_json
+from scripts.pipeline_utils import artifact_checksums, manifest_path, sha256_file
 
 TABLE_NAME = "table_01_scenario_summary"
 FIGURE_1_NAME = "figure_01_ever_probabilities"
@@ -82,7 +83,7 @@ def _grouped_bar(df: pd.DataFrame, metrics: list[str], title: str, ylabel: str, 
     plt.close(fig)
 
 
-def generate_reports(results_dir: Path, reports_dir: Path) -> dict[str, list[str] | str]:
+def generate_reports(results_dir: Path, reports_dir: Path) -> dict[str, object]:
     scenario_path = results_dir / "scenario_summaries.csv"
     if not scenario_path.exists():
         raise FileNotFoundError(f"Missing scenario summary file: {scenario_path}")
@@ -116,9 +117,14 @@ def generate_reports(results_dir: Path, reports_dir: Path) -> dict[str, list[str
 
     manifest = {
         "generated_at_utc": utc_now_iso(),
-        "results_dir": str(results_dir),
-        "reports_dir": str(reports_dir),
+        "results_dir": results_dir,
+        "reports_dir": reports_dir,
+        "source_summary": {
+            "path": manifest_path(scenario_path, relative_to=results_dir),
+            "sha256": sha256_file(scenario_path),
+        },
         "artifacts": [str(path.relative_to(reports_dir)) for path in generated_paths],
+        "artifact_checksums": artifact_checksums(generated_paths, relative_to=reports_dir),
     }
     write_json(reports_dir / "manifest.json", manifest)
     return manifest

@@ -21,4 +21,6 @@ def test_generate_reports_creates_expected_artifacts(tmp_path: Path) -> None:
         "tables/table_01_scenario_summary.csv",
         "tables/table_01_scenario_summary.md",
     ]
+    assert sorted(manifest["artifact_checksums"].keys()) == sorted(manifest["artifacts"])
+    assert manifest["source_summary"]["path"] == "scenario_summaries.csv"
     assert (reports_dir / "manifest.json").exists()

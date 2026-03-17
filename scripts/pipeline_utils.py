@@ -173,6 +173,31 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def portable_path(path: Path, *, base_dir: Path = REPO_ROOT) -> str:
+    if not path.is_absolute():
+        return path.as_posix()
+    try:
+        return path.resolve().relative_to(base_dir.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def manifest_path(path: Path, *, relative_to: Path | None = None) -> str:
+    if relative_to is not None:
+        try:
+            return path.relative_to(relative_to).as_posix()
+        except ValueError:
+            pass
+    return portable_path(path)
+
+
+def artifact_checksums(paths: list[Path], *, relative_to: Path | None = None) -> Dict[str, str]:
+    return {
+        manifest_path(path, relative_to=relative_to): sha256_file(path)
+        for path in paths
+    }
+
+
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
@@ -203,7 +228,7 @@ def git_commit(repo_root: Path = REPO_ROOT) -> str:
 
 def serialise_for_json(value: Any) -> Any:
     if isinstance(value, Path):
-        return str(value)
+        return portable_path(value)
     if isinstance(value, dict):
         return {str(key): serialise_for_json(item) for key, item in value.items()}
     if isinstance(value, list):

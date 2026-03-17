@@ -27,10 +27,12 @@ from scripts.pipeline_utils import (
     RATE_SEVERE_COL,
     TENURE_BUCKETS,
     TENURE_COLUMNS,
+    artifact_checksums,
     dependency_versions,
     git_commit,
     load_model_inputs,
     load_yaml,
+    manifest_path,
     resolve_input_path,
     serialise_for_json,
     sha256_file,
@@ -250,6 +252,11 @@ def _write_manifest(runtime: Dict[str, object], scenario_summaries: pd.DataFrame
     input_path = runtime["input_path"]
     config_path = runtime["config_path"]
     output_dir = runtime["output_dir"]
+    output_paths = [
+        Path(output_dir) / "scenario_summaries.csv",
+        Path(output_dir) / "inputs_used.csv",
+        Path(output_dir) / "profiles_used.csv",
+    ]
 
     manifest = {
         "generated_at_utc": utc_now_iso(),
@@ -277,10 +284,21 @@ def _write_manifest(runtime: Dict[str, object], scenario_summaries: pd.DataFrame
         "cli_overrides": runtime["cli_args"],
         "scenarios": serialise_for_json(runtime["scenarios"]),
         "outputs": {
-            "scenario_summaries": "scenario_summaries.csv",
-            "inputs_used": "inputs_used.csv",
-            "profiles_used": "profiles_used.csv",
+            "directory": output_dir,
             "rows": int(len(scenario_summaries)),
+            "scenario_summaries": {
+                "path": manifest_path(output_paths[0], relative_to=Path(output_dir)),
+                "sha256": sha256_file(output_paths[0]),
+            },
+            "inputs_used": {
+                "path": manifest_path(output_paths[1], relative_to=Path(output_dir)),
+                "sha256": sha256_file(output_paths[1]),
+            },
+            "profiles_used": {
+                "path": manifest_path(output_paths[2], relative_to=Path(output_dir)),
+                "sha256": sha256_file(output_paths[2]),
+            },
+            "artifact_checksums": artifact_checksums(output_paths, relative_to=Path(output_dir)),
         },
     }
     write_json(Path(output_dir) / "run_manifest.json", manifest)
