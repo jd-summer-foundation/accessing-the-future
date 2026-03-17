@@ -46,6 +46,7 @@ make validate-data
 make run-baseline
 make report
 make reproduce
+make release-check
 ```
 
 For a fast smoke run:
@@ -120,3 +121,10 @@ python3 -m pytest
 
 - Citation metadata: [CITATION.cff](CITATION.cff)
 - Zenodo metadata: [.zenodo.json](.zenodo.json)
+- Release checklist: [docs/release.md](docs/release.md)
+
+Run the release validation step before tagging an archival snapshot:
+
+```bash
+make release-check
+```
