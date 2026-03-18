@@ -1,9 +1,12 @@
 import json
 from pathlib import Path
+import subprocess
 
 import pytest
 
 from scripts.check_release import validate_release
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _write_text(path: Path, content: str) -> None:
@@ -98,7 +101,8 @@ def _make_minimal_release_repo(tmp_path: Path) -> Path:
 
 
 def test_validate_release_accepts_current_repo() -> None:
-    validate_release(Path(__file__).resolve().parents[1])
+    subprocess.run(["make", "reproduce"], cwd=ROOT, check=True)
+    validate_release(ROOT)
 
 
 def test_validate_release_rejects_metadata_mismatch(tmp_path: Path) -> None:
