@@ -134,6 +134,7 @@ def _build_runtime(args: argparse.Namespace) -> Dict[str, object]:
         "horizon_years": args.horizon_years if args.horizon_years is not None else int(run_cfg.get("horizon_years", 50)),
         "return_time_stats": bool(run_cfg.get("return_time_stats", True)),
         "scenarios": config.get("scenarios") or _default_scenarios(),
+        "transition_model_config": config.get("transition_model"),
         "verbose": args.verbose,
         "cli_args": {key: value for key, value in vars(args).items() if value is not None and key != "verbose"},
     }
@@ -283,6 +284,7 @@ def _write_manifest(runtime: Dict[str, object], scenario_summaries: pd.DataFrame
         },
         "cli_overrides": runtime["cli_args"],
         "scenarios": serialise_for_json(runtime["scenarios"]),
+        "resolved_scenarios": serialise_for_json(runtime.get("resolved_scenarios", [])),
         "outputs": {
             "directory": output_dir,
             "rows": int(len(scenario_summaries)),
@@ -319,11 +321,16 @@ def main() -> None:
     prepared["profiles_df"].to_csv(output_dir / "profiles_used.csv", index=False)
 
     summaries = []
+    resolved_scenarios = []
     for scenario in runtime["scenarios"]:
         if not isinstance(scenario, dict):
             raise ValueError(f"Scenario entries must be mappings, found {type(scenario).__name__}")
 
         scenario_name = str(scenario["name"])
+        scenario_transition_config = (
+            scenario["transition_model"] if "transition_model" in scenario else runtime["transition_model_config"]
+        )
+        scenario_transition_model = eng.transition_model_from_config(scenario_transition_config)
         params = eng.SimParams(
             n_props=int(runtime["n_props"]),
             seed=int(runtime["seed"]),
@@ -339,13 +346,25 @@ def main() -> None:
             scenario_rates,
             prepared["tenure"],
             prepared["inmovers"],
+            transition_model=scenario_transition_model,
             general_pop_probs=prepared["general_pop_probs"] if params.first_draw_source == "general" else None,
             return_time_stats=bool(runtime["return_time_stats"]),
         )
         summaries.append({"scenario": scenario_name, **summary})
+        resolved_scenarios.append(
+            {
+                "name": scenario_name,
+                "first_draw_source": params.first_draw_source,
+                "disabled_tenure_factor": params.disabled_tenure_factor,
+                "rate_scale": float(scenario.get("rate_scale", 1.0)),
+                "rate_scales": scenario.get("rate_scales", {}),
+                "transition_model": eng.transition_model_to_config(scenario_transition_model),
+            }
+        )
 
     summary_df = pd.DataFrame(summaries)
     summary_df.to_csv(output_dir / "scenario_summaries.csv", index=False)
+    runtime["resolved_scenarios"] = resolved_scenarios
     _write_manifest(runtime, summary_df)
 
     for scenario in summaries:

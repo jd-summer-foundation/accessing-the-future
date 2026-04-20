@@ -70,3 +70,14 @@ def test_baseline_regression_matches_expected_fixture(tmp_path: Path) -> None:
         "profiles_used.csv",
         "scenario_summaries.csv",
     ]
+    assert len(manifest["resolved_scenarios"]) == 4
+    assert manifest["resolved_scenarios"][0]["transition_model"]["interval_years"] == 1
+    assert manifest["resolved_scenarios"][0]["transition_model"]["matrices"]["any_dis"][0] == [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ]

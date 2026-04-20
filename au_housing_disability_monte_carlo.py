@@ -25,13 +25,14 @@ Outputs (summary dict):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import time
 
 BRACKETS: List[str] = ["15-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75+"]
 BRACKET_IDX = {b: i for i, b in enumerate(BRACKETS)}
+TRANSITION_SERIES: Tuple[str, ...] = ("any_dis", "severe_prof", "motor_phys", "phys2")
 
 DEFAULT_HORIZON_YEARS = 50
 
@@ -96,6 +97,52 @@ class SimParams:
 
     # If household currently has ANY/SEVERE/PHYSICAL, lengthen tenure by this factor (e.g. 1.2)
     disabled_tenure_factor: float = 1.0
+
+
+@dataclass(frozen=True)
+class TransitionModel:
+    """Calendar-time update rules for age-bracketed rate vectors."""
+
+    interval_years: int
+    matrices: Dict[str, np.ndarray]
+
+    def __post_init__(self) -> None:
+        if isinstance(self.interval_years, bool) or int(self.interval_years) != self.interval_years:
+            raise ValueError(f"interval_years must be a positive integer, got {self.interval_years!r}")
+        if int(self.interval_years) <= 0:
+            raise ValueError(f"interval_years must be positive, got {self.interval_years}")
+
+        missing = [name for name in TRANSITION_SERIES if name not in self.matrices]
+        if missing:
+            raise ValueError(f"TransitionModel.matrices missing series: {missing}")
+
+        extras = sorted(name for name in self.matrices if name not in TRANSITION_SERIES)
+        if extras:
+            raise ValueError(f"TransitionModel.matrices has unexpected series: {extras}")
+
+        normalised: Dict[str, np.ndarray] = {}
+        expected_shape = (len(BRACKETS), len(BRACKETS))
+        for name in TRANSITION_SERIES:
+            arr = np.asarray(self.matrices[name], dtype=float)
+            if arr.shape != expected_shape:
+                raise ValueError(f"{name} transition matrix must have shape {expected_shape}, got {arr.shape}")
+            if np.any(~np.isfinite(arr)):
+                raise ValueError(f"{name} transition matrix contains NaN/inf values")
+            arr = arr.copy()
+            arr.setflags(write=False)
+            normalised[name] = arr
+
+        object.__setattr__(self, "interval_years", int(self.interval_years))
+        object.__setattr__(self, "matrices", normalised)
+
+
+@dataclass(frozen=True)
+class TransitionSnapshot:
+    """Precomputed rate/profile state for a calendar-time update boundary."""
+
+    time_year: float
+    rates: AllRates
+    profiles: Dict[str, object]
 
 
 # -------------------------------------------------------------------
@@ -241,6 +288,234 @@ def make_profiles(all_rates: AllRates) -> Dict[str, object]:
     }
 
 
+def transition_model_from_config(config: object | None) -> Optional[TransitionModel]:
+    """Parse a YAML-style transition-model mapping into a validated TransitionModel."""
+    if config is None:
+        return None
+    if not isinstance(config, dict):
+        raise ValueError(f"transition_model must be a mapping, found {type(config).__name__}")
+
+    interval_years = config.get("interval_years", 1)
+    matrices_cfg = config.get("matrices")
+    if not isinstance(matrices_cfg, dict):
+        raise ValueError("transition_model.matrices must be a mapping")
+
+    missing = [name for name in TRANSITION_SERIES if name not in matrices_cfg]
+    if missing:
+        raise ValueError(f"transition_model.matrices missing series: {missing}")
+
+    extras = sorted(name for name in matrices_cfg if name not in TRANSITION_SERIES)
+    if extras:
+        raise ValueError(f"transition_model.matrices has unexpected series: {extras}")
+
+    expected_shape = (len(BRACKETS), len(BRACKETS))
+    matrices: Dict[str, np.ndarray] = {}
+    for name in TRANSITION_SERIES:
+        value = matrices_cfg[name]
+        if isinstance(value, str):
+            if value != "identity":
+                raise ValueError(f"{name} transition matrix string must be 'identity', got {value!r}")
+            matrices[name] = np.eye(len(BRACKETS), dtype=float)
+            continue
+
+        try:
+            arr = np.asarray(value, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name} transition matrix must be numeric") from exc
+
+        if arr.shape != expected_shape:
+            raise ValueError(f"{name} transition matrix must have shape {expected_shape}, got {arr.shape}")
+        if np.any(~np.isfinite(arr)):
+            raise ValueError(f"{name} transition matrix contains NaN/inf values")
+        matrices[name] = arr
+
+    return TransitionModel(interval_years=interval_years, matrices=matrices)
+
+
+def transition_model_to_config(transition_model: Optional[TransitionModel]) -> Optional[Dict[str, object]]:
+    """Convert a TransitionModel into a JSON/YAML-serialisable mapping."""
+    if transition_model is None:
+        return None
+    return {
+        "interval_years": int(transition_model.interval_years),
+        "matrices": {
+            name: transition_model.matrices[name].tolist()
+            for name in TRANSITION_SERIES
+        },
+    }
+
+
+def _rates_to_vector(rates: Rates) -> np.ndarray:
+    return np.asarray([float(rates.by_bracket[bracket]) for bracket in BRACKETS], dtype=float)
+
+
+def _vector_to_rates(values: np.ndarray) -> Rates:
+    clipped = np.clip(np.asarray(values, dtype=float), 0.0, 1.0)
+    return Rates({bracket: float(clipped[index]) for index, bracket in enumerate(BRACKETS)})
+
+
+def apply_transition_model_once(rates: AllRates, transition_model: TransitionModel) -> AllRates:
+    """Apply one calendar-time transition step to the raw rate vectors."""
+    return AllRates(
+        any_dis=_vector_to_rates(transition_model.matrices["any_dis"] @ _rates_to_vector(rates.any_dis)),
+        severe_prof=_vector_to_rates(transition_model.matrices["severe_prof"] @ _rates_to_vector(rates.severe_prof)),
+        motor_phys=_vector_to_rates(transition_model.matrices["motor_phys"] @ _rates_to_vector(rates.motor_phys)),
+        phys2=_vector_to_rates(transition_model.matrices["phys2"] @ _rates_to_vector(rates.phys2)),
+    )
+
+
+def build_transition_schedule(
+    base_rates: AllRates,
+    horizon_years: int,
+    transition_model: Optional[TransitionModel] = None,
+) -> List[TransitionSnapshot]:
+    """Precompute profile snapshots for each calendar-time update boundary."""
+    snapshots = [TransitionSnapshot(time_year=0.0, rates=base_rates, profiles=make_profiles(base_rates))]
+    if transition_model is None:
+        return snapshots
+
+    current_rates = base_rates
+    n_steps = int(horizon_years) // int(transition_model.interval_years)
+    for step in range(1, n_steps + 1):
+        current_rates = apply_transition_model_once(current_rates, transition_model)
+        snapshots.append(
+            TransitionSnapshot(
+                time_year=float(step * transition_model.interval_years),
+                rates=current_rates,
+                profiles=make_profiles(current_rates),
+            )
+        )
+    return snapshots
+
+
+def _acquire_prob(prev_rate: float, next_rate: float) -> float:
+    prev = float(prev_rate)
+    nxt = float(next_rate)
+    if nxt <= prev or prev >= 1.0:
+        return 0.0
+    return (nxt - prev) / (1.0 - prev)
+
+
+def _event_occurs(probability: float, rng: np.random.Generator) -> bool:
+    prob = float(probability)
+    if prob <= 0.0:
+        return False
+    if prob >= 1.0:
+        return True
+    return bool(rng.random() < prob)
+
+
+def _seed_household_state(
+    bracket: str,
+    profiles: Dict[str, object],
+    rng: np.random.Generator,
+) -> Tuple[bool, bool, bool, bool]:
+    adj_any = profiles["adj_any"]
+    cond_severe = profiles["cond_severe"]
+    cond_phys = profiles["cond_phys"]
+    adj_phys2 = profiles["adj_phys2"]
+
+    any_d = rng.random() < float(adj_any[bracket])
+    if any_d:
+        sev_d = rng.random() < float(cond_severe[bracket])
+        phys_d = rng.random() < float(cond_phys[bracket])
+    else:
+        sev_d = False
+        phys_d = False
+    phys2_d = rng.random() < float(adj_phys2[bracket])
+    return any_d, sev_d, phys_d, phys2_d
+
+
+def _apply_time_step_transition(
+    bracket: str,
+    prev_profiles: Dict[str, object],
+    next_profiles: Dict[str, object],
+    rng: np.random.Generator,
+    any_d: bool,
+    sev_d: bool,
+    phys_d: bool,
+    phys2_d: bool,
+) -> Tuple[bool, bool, bool, bool]:
+    became_any_now = False
+
+    if not any_d:
+        p_any = _acquire_prob(float(prev_profiles["adj_any"][bracket]), float(next_profiles["adj_any"][bracket]))
+        if _event_occurs(p_any, rng):
+            any_d = True
+            became_any_now = True
+
+    if any_d:
+        if became_any_now:
+            if not sev_d and _event_occurs(float(next_profiles["cond_severe"][bracket]), rng):
+                sev_d = True
+            if not phys_d and _event_occurs(float(next_profiles["cond_phys"][bracket]), rng):
+                phys_d = True
+        else:
+            if not sev_d:
+                p_sev = _acquire_prob(
+                    float(prev_profiles["cond_severe"][bracket]),
+                    float(next_profiles["cond_severe"][bracket]),
+                )
+                if _event_occurs(p_sev, rng):
+                    sev_d = True
+            if not phys_d:
+                p_phys = _acquire_prob(
+                    float(prev_profiles["cond_phys"][bracket]),
+                    float(next_profiles["cond_phys"][bracket]),
+                )
+                if _event_occurs(p_phys, rng):
+                    phys_d = True
+
+    if not phys2_d:
+        p_phys2 = _acquire_prob(float(prev_profiles["adj_phys2"][bracket]), float(next_profiles["adj_phys2"][bracket]))
+        if _event_occurs(p_phys2, rng):
+            phys2_d = True
+
+    return any_d, sev_d, phys_d, phys2_d
+
+
+def _apply_age_boundary_transition(
+    bracket: str,
+    next_bracket: str,
+    profiles: Dict[str, object],
+    rng: np.random.Generator,
+    any_d: bool,
+    sev_d: bool,
+    phys_d: bool,
+    phys2_d: bool,
+) -> Tuple[bool, bool, bool, bool]:
+    became_any_now = False
+
+    if not any_d:
+        p_any = float(profiles["acq_any"].get((bracket, next_bracket), 0.0))
+        if rng.random() < p_any:
+            any_d = True
+            became_any_now = True
+
+    if any_d:
+        if became_any_now:
+            if not sev_d and rng.random() < float(profiles["cond_severe"][next_bracket]):
+                sev_d = True
+            if not phys_d and rng.random() < float(profiles["cond_phys"][next_bracket]):
+                phys_d = True
+        else:
+            if not sev_d:
+                p_sev = float(profiles["acq_cond_severe"].get((bracket, next_bracket), 0.0))
+                if rng.random() < p_sev:
+                    sev_d = True
+            if not phys_d:
+                p_phys = float(profiles["acq_cond_phys"].get((bracket, next_bracket), 0.0))
+                if rng.random() < p_phys:
+                    phys_d = True
+
+    if not phys2_d:
+        p_phys2 = float(profiles["acq_phys2"].get((bracket, next_bracket), 0.0))
+        if rng.random() < p_phys2:
+            phys2_d = True
+
+    return any_d, sev_d, phys_d, phys2_d
+
+
 def _prepare_cdf(name: str, probs: List[float]) -> np.ndarray:
     """Validate and compute CDF once for a probability vector."""
     p = _validate_probs(name, probs)
@@ -290,6 +565,7 @@ def run_sim(
     rates: AllRates,
     tenure: TenureDist,
     inmovers: InMoverDist,
+    transition_model: Optional[TransitionModel] = None,
     general_pop_probs: Optional[Dict[str, float]] = None,
     return_time_stats: bool = False,
     debug_age_boundary: bool = False,
@@ -321,17 +597,7 @@ def run_sim(
         if len(tenure.probs_by_bracket[b]) != len(tenure.buckets):
             raise ValueError(f"tenure probs length mismatch for {b}: "
                              f"{len(tenure.probs_by_bracket[b])} vs buckets {len(tenure.buckets)}")
-
-    prof = make_profiles(rates)
-    adj_any = prof["adj_any"]
-    cond_severe = prof["cond_severe"]
-    cond_phys = prof["cond_phys"]
-    adj_phys2 = prof["adj_phys2"]
-
-    acq_any = prof["acq_any"]
-    acq_cond_severe = prof["acq_cond_severe"]
-    acq_cond_phys = prof["acq_cond_phys"]
-    acq_phys2 = prof["acq_phys2"]
+    schedule = build_transition_schedule(rates, params.horizon_years, transition_model)
 
     # Precompute bracket widths (years until next boundary, by current bracket)
     width_map = {
@@ -413,6 +679,8 @@ def run_sim(
             )
 
         t = 0.0
+        transition_idx = 0
+        current_snapshot = schedule[transition_idx]
         br = pick_first_bracket()
         yrs_to_boundary = years_to_boundary_at_move_in(br)
         if debug_age_boundary and debug_prints_done < debug_print_limit:
@@ -424,17 +692,7 @@ def run_sim(
 
         # Seed first household statuses from prevalence at starting bracket
         # motor_phys is conditional on any_dis (subtype); phys2 is independent (separate process)
-
-        any_d = rng.random() < float(adj_any[br])
-
-        if any_d:
-            sev_d = rng.random() < float(cond_severe[br])
-            phys_d = rng.random() < float(cond_phys[br])
-        else:
-            sev_d = False
-            phys_d = False
-
-        phys2_d = rng.random() < float(adj_phys2[br])
+        any_d, sev_d, phys_d, phys2_d = _seed_household_state(br, current_snapshot.profiles, rng)
 
         ever_any[i] = ever_any[i] or any_d
         ever_sev[i] = ever_sev[i] or sev_d
@@ -454,7 +712,12 @@ def run_sim(
             remaining = dur
 
             while remaining > 0.0 and t < float(params.horizon_years):
-                seg = min(remaining, yrs_to_boundary, float(params.horizon_years) - t)
+                next_transition_time = (
+                    schedule[transition_idx + 1].time_year
+                    if transition_idx + 1 < len(schedule)
+                    else float("inf")
+                )
+                seg = min(remaining, yrs_to_boundary, next_transition_time - t, float(params.horizon_years) - t)
 
                 # accumulate time
                 time_total[i] += seg
@@ -471,54 +734,51 @@ def run_sim(
                 remaining -= seg
                 yrs_to_boundary -= seg
 
-                # If we've hit a bracket boundary, transition to next bracket and apply acquisitions
-                if yrs_to_boundary <= 1e-12 and br != "75+" and t < float(params.horizon_years):
+                hit_transition = next_transition_time < float("inf") and abs(t - next_transition_time) <= 1e-12
+                hit_age_boundary = yrs_to_boundary <= 1e-12
+
+                if hit_transition and t < float(params.horizon_years):
+                    prev_profiles = current_snapshot.profiles
+                    transition_idx += 1
+                    current_snapshot = schedule[transition_idx]
+                    any_d, sev_d, phys_d, phys2_d = _apply_time_step_transition(
+                        br,
+                        prev_profiles,
+                        current_snapshot.profiles,
+                        rng,
+                        any_d,
+                        sev_d,
+                        phys_d,
+                        phys2_d,
+                    )
+                    ever_any[i] = ever_any[i] or any_d
+                    ever_sev[i] = ever_sev[i] or sev_d
+                    ever_phys[i] = ever_phys[i] or phys_d
+                    ever_phys2[i] = ever_phys2[i] or phys2_d
+
+                # If we've hit a bracket boundary, transition to next bracket and apply acquisitions.
+                # Calendar-time transitions are processed first when both happen at the same instant.
+                if hit_age_boundary and br != "75+" and t < float(params.horizon_years):
                     next_br = BRACKETS[BRACKET_IDX[br] + 1]
                     if debug_age_boundary and debug_prints_done < debug_print_limit:
                         print(f"[DEBUG] Aged into bracket {next_br} at t={t:.1f}")
 
-                    became_any_now = False
-
-                    # ANY acquisition
-                    if not any_d:
-                        p_a = float(acq_any.get((br, next_br), 0.0))
-                        if rng.random() < p_a:
-                            any_d = True
-                            became_any_now = True
-                            ever_any[i] = True
-
-                    # Severe/physical conditional on ANY
-                    if any_d:
-                        if became_any_now:
-                            # Seed subtype immediately using conditional at new bracket
-                            if rng.random() < float(cond_severe[next_br]):
-                                sev_d = True
-                                ever_sev[i] = True
-                            if rng.random() < float(cond_phys[next_br]):
-                                phys_d = True
-                                ever_phys[i] = True
-                        else:
-                            # Already had ANY; may newly acquire subtype
-                            if not sev_d:
-                                p_s = float(acq_cond_severe.get((br, next_br), 0.0))
-                                if rng.random() < p_s:
-                                    sev_d = True
-                                    ever_sev[i] = True
-                            if not phys_d:
-                                p_p = float(acq_cond_phys.get((br, next_br), 0.0))
-                                if rng.random() < p_p:
-                                    phys_d = True
-                                    ever_phys[i] = True
-
-                    # phys2 independent
-                    if not phys2_d:
-                        p_p2 = float(acq_phys2.get((br, next_br), 0.0))
-                        if rng.random() < p_p2:
-                            phys2_d = True
-                            ever_phys2[i] = True
-
+                    any_d, sev_d, phys_d, phys2_d = _apply_age_boundary_transition(
+                        br,
+                        next_br,
+                        current_snapshot.profiles,
+                        rng,
+                        any_d,
+                        sev_d,
+                        phys_d,
+                        phys2_d,
+                    )
                     br = next_br
                     yrs_to_boundary = width_map[br]  # now at the start of the new bracket
+                    ever_any[i] = ever_any[i] or any_d
+                    ever_sev[i] = ever_sev[i] or sev_d
+                    ever_phys[i] = ever_phys[i] or phys_d
+                    ever_phys2[i] = ever_phys2[i] or phys2_d
 
             # Tenure ended -> household moves out -> new household moves in
             if t < float(params.horizon_years):
@@ -532,14 +792,7 @@ def run_sim(
                     )
                     debug_prints_done += 1
 
-                any_d = rng.random() < float(adj_any[br])
-                if any_d:
-                    sev_d = rng.random() < float(cond_severe[br])
-                    phys_d = rng.random() < float(cond_phys[br])
-                else:
-                    sev_d = False
-                    phys_d = False
-                phys2_d = rng.random() < float(adj_phys2[br])
+                any_d, sev_d, phys_d, phys2_d = _seed_household_state(br, current_snapshot.profiles, rng)
 
                 ever_any[i] = ever_any[i] or any_d
                 ever_sev[i] = ever_sev[i] or sev_d

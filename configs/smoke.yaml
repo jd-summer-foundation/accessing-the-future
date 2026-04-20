@@ -10,6 +10,14 @@ run:
 input:
   sheet: 0
 
+transition_model:
+  interval_years: 1
+  matrices:
+    any_dis: identity
+    severe_prof: identity
+    motor_phys: identity
+    phys2: identity
+
 scenarios:
   - name: main_inmover_first
     first_draw_source: inmover
