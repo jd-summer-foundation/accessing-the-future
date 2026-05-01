@@ -103,7 +103,7 @@ def generate_reports(results_dir: Path, reports_dir: Path) -> dict[str, object]:
         df,
         ["p_ever_any", "p_ever_severe", "p_ever_physical", "p_ever_physical2"],
         "Probability a dwelling ever hosts a relevant household type",
-        "Probability over 50-year horizon",
+        "Probability over configured horizon",
         figure_1,
     )
     _grouped_bar(

@@ -34,7 +34,7 @@ BRACKETS: List[str] = ["15-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75
 BRACKET_IDX = {b: i for i, b in enumerate(BRACKETS)}
 TRANSITION_SERIES: Tuple[str, ...] = ("any_dis", "severe_prof", "motor_phys", "phys2")
 
-DEFAULT_HORIZON_YEARS = 50
+DEFAULT_HORIZON_YEARS = 20
 
 
 # -------------------------------------------------------------------
@@ -833,5 +833,5 @@ if __name__ == "__main__":
     inmovers = InMoverDist({b: 1/len(BRACKETS) for b in BRACKETS})
     rates = AllRates(Rates(any_rates), Rates(sev_rates), Rates(phys_rates), Rates(phys2_rates))
 
-    params = SimParams(n_props=2000, seed=1, first_draw_source="inmover", horizon_years=50)
+    params = SimParams(n_props=2000, seed=1, first_draw_source="inmover")
     print("Self-test summary:", run_sim(params, rates, tenure, inmovers, return_time_stats=True))

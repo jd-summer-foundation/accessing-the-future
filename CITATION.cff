@@ -7,4 +7,4 @@ authors:
     given-names: Joel
 version: 0.1.0
 license: "See LICENSE"
-abstract: "A reproducible research workflow for estimating the probability that Australian dwellings will host households including a person with disability over a 50-year horizon."
+abstract: "A reproducible research workflow for estimating the probability that Australian dwellings will host households including a person with disability over a 20-year default horizon."

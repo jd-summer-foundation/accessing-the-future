@@ -1,6 +1,6 @@
 # Accessing the Future: Reproducible Research Package
 
-This repository contains a Monte Carlo simulation model estimating the likelihood that Australian dwellings will, over a 50-year horizon, be occupied by households including a person with disability or physical long-term health needs.
+This repository contains a Monte Carlo simulation model estimating the likelihood that Australian dwellings will, over a 20-year default horizon, be occupied by households including a person with disability or physical long-term health needs.
 
 The repository now supports a raw-to-results workflow:
 
@@ -100,7 +100,7 @@ make smoke
 
 ## Reproducibility Notes
 
-- Fixed defaults for the baseline run live in [configs/baseline.yaml](configs/baseline.yaml): `seed=123`, `n_props=44346`, `horizon_years=50`.
+- Fixed defaults for the baseline run live in [configs/baseline.yaml](configs/baseline.yaml): `seed=123`, `n_props=44346`, `horizon_years=20`.
 - `make verify-data` checks the canonical raw workbooks listed in [data/checksums.sha256](data/checksums.sha256) before rebuilds.
 - The processed CSV is deterministic and is validated against the current raw-source derivation on every `make validate-data`.
 - The run manifest records commit hash, dependency versions, input checksum, config checksum, and runtime parameters.

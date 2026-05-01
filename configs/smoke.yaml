@@ -4,7 +4,7 @@ run:
   output_dir: results/smoke
   seed: 123
   n_props: 200
-  horizon_years: 50
+  horizon_years: 20
   return_time_stats: true
 
 input:

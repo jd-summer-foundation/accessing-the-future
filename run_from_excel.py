@@ -131,7 +131,9 @@ def _build_runtime(args: argparse.Namespace) -> Dict[str, object]:
         "run_name": run_cfg.get("name", output_dir.name),
         "n_props": args.n_props if args.n_props is not None else int(run_cfg.get("n_props", 44_346)),
         "seed": args.seed if args.seed is not None else int(run_cfg.get("seed", 123)),
-        "horizon_years": args.horizon_years if args.horizon_years is not None else int(run_cfg.get("horizon_years", 50)),
+        "horizon_years": args.horizon_years
+        if args.horizon_years is not None
+        else int(run_cfg.get("horizon_years", eng.DEFAULT_HORIZON_YEARS)),
         "return_time_stats": bool(run_cfg.get("return_time_stats", True)),
         "scenarios": config.get("scenarios") or _default_scenarios(),
         "transition_model_config": config.get("transition_model"),
