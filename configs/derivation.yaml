@@ -7,6 +7,7 @@ processed_excel: data/processed/model_inputs.xlsx
 raw_tables:
   estimates_sheet: Table 1_1 Estimates
   proportions_sheet: Table 1_3 Proportions
+  proportion_moes_sheet: Table 1_4 MoEs
   raw_label_column_index: 0
 
 age_brackets:

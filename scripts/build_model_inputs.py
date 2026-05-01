@@ -25,6 +25,9 @@ from scripts.pipeline_utils import (
     GENPOP_COL,
     INMOVER_COL,
     MODEL_INPUT_COLUMNS,
+    RATE_COLUMNS,
+    RATE_MOE_COLUMNS,
+    RATE_MOE_SUFFIX,
     RATE_ANY_COL,
     RATE_MOTOR_COL,
     RATE_PHYS2_COL,
@@ -127,6 +130,8 @@ def build_model_inputs(
 
     estimates = _load_raw_table(workbook, tables["estimates_sheet"])
     proportions = _load_raw_table(workbook, tables["proportions_sheet"])
+    proportion_moes_sheet = tables.get("proportion_moes_sheet")
+    proportion_moes = _load_raw_table(workbook, proportion_moes_sheet) if proportion_moes_sheet else None
     tenure_by_bracket, inmover_distribution = _load_housing_mobility_profiles(
         config,
         mobility_workbook=mobility_workbook,
@@ -136,22 +141,28 @@ def build_model_inputs(
     for age_bracket, raw_label in config["age_brackets"].items():
         estimate_row = _row_by_label(estimates, raw_label, label_column_index)
         proportion_row = _row_by_label(proportions, raw_label, label_column_index)
+        proportion_moe_row = (
+            _row_by_label(proportion_moes, raw_label, label_column_index)
+            if proportion_moes is not None
+            else None
+        )
 
         row: Dict[str, float | int | str] = {AGE_COL: age_bracket}
         for column_name, spec in config["column_mappings"].items():
             source_row = estimate_row if spec["sheet"] == "estimates" else proportion_row
             row[column_name] = _extract_value(source_row, spec)
+            if spec["sheet"] == "proportions" and proportion_moe_row is not None:
+                row[f"{column_name}{RATE_MOE_SUFFIX}"] = _extract_value(proportion_moe_row, spec)
 
         row[INMOVER_COL] = float(inmover_distribution[age_bracket])
         for column in TENURE_COLUMNS:
             row[column] = float(tenure_by_bracket[age_bracket][column])
         rows.append(row)
 
-    df = pd.DataFrame(rows, columns=MODEL_INPUT_COLUMNS)
-    df[RATE_ANY_COL] = df[RATE_ANY_COL].astype(float)
-    df[RATE_MOTOR_COL] = df[RATE_MOTOR_COL].astype(float)
-    df[RATE_SEVERE_COL] = df[RATE_SEVERE_COL].astype(float)
-    df[RATE_PHYS2_COL] = df[RATE_PHYS2_COL].astype(float)
+    optional_moe_columns = [column for column in RATE_MOE_COLUMNS if any(column in row for row in rows)]
+    df = pd.DataFrame(rows, columns=[*MODEL_INPUT_COLUMNS, *optional_moe_columns])
+    for column in [*RATE_COLUMNS, *optional_moe_columns]:
+        df[column] = df[column].astype(float)
     df[GENPOP_COL] = df[GENPOP_COL].astype(int)
     return validate_model_inputs(df)
 

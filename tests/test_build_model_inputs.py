@@ -9,6 +9,11 @@ from scripts.pipeline_utils import (
     DEFAULT_HOUSING_MOBILITY_WORKBOOK,
     DEFAULT_LEGACY_ORACLE,
     INMOVER_COL,
+    RATE_ANY_COL,
+    RATE_MOE_SUFFIX,
+    RATE_MOTOR_COL,
+    RATE_PHYS2_COL,
+    RATE_SEVERE_COL,
     TENURE_COLUMNS,
     load_model_inputs,
 )
@@ -61,3 +66,13 @@ def test_inmover_distribution_is_derived_from_lt1_counts() -> None:
     for age_bracket, expected_value in expected.items():
         actual_value = float(generated.loc[generated[AGE_COL] == age_bracket, INMOVER_COL].iloc[0])
         assert actual_value == pytest.approx(expected_value, rel=0, abs=1e-12)
+
+
+def test_disability_rate_moes_are_extracted_from_matching_table() -> None:
+    generated = build_model_inputs(DEFAULT_DERIVATION_CONFIG)
+
+    row = generated.loc[generated[AGE_COL] == "15-24"].iloc[0]
+    assert row[f"{RATE_ANY_COL}{RATE_MOE_SUFFIX}"] == pytest.approx(3.9)
+    assert row[f"{RATE_MOTOR_COL}{RATE_MOE_SUFFIX}"] == pytest.approx(3.9)
+    assert row[f"{RATE_SEVERE_COL}{RATE_MOE_SUFFIX}"] == pytest.approx(2.4)
+    assert row[f"{RATE_PHYS2_COL}{RATE_MOE_SUFFIX}"] == pytest.approx(4.7)

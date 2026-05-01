@@ -83,8 +83,8 @@ make smoke
 - Version-controlled scenario definitions: [configs/baseline.yaml](configs/baseline.yaml)
 
 ### Process
-- [scripts/build_model_inputs.py](scripts/build_model_inputs.py) extracts disability prevalence and household totals from SDAC22, tenure distributions from Housing Mobility Table 2.2, and derives the in-mover distribution from raw `<1 year` tenure counts by age.
-- [run_from_excel.py](run_from_excel.py) reads `data/processed/model_inputs.csv`, normalizes distributions, runs the four scenarios, and writes run manifests.
+- [scripts/build_model_inputs.py](scripts/build_model_inputs.py) extracts disability prevalence, margin-of-error bounds, and household totals from SDAC22, tenure distributions from Housing Mobility Table 2.2, and derives the in-mover distribution from raw `<1 year` tenure counts by age.
+- [run_from_excel.py](run_from_excel.py) reads `data/processed/model_inputs.csv`, normalizes distributions, expands each configured scenario into low/base/high confidence-bound cases when MoE inputs are available, and writes run manifests.
 - [scripts/generate_reports.py](scripts/generate_reports.py) converts scenario summaries into one table and two figures.
 
 ### Outputs

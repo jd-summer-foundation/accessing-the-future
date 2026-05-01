@@ -46,7 +46,8 @@ def _write_summary_table(df: pd.DataFrame, tables_dir: Path) -> list[Path]:
     table_md = tables_dir / f"{TABLE_NAME}.md"
 
     display = df.copy()
-    for column in [c for c in display.columns if c != "scenario"]:
+    numeric_columns = display.select_dtypes(include="number").columns
+    for column in numeric_columns:
         display[column] = display[column].map(_format_percent)
     display.to_csv(table_csv, index=False)
 

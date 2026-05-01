@@ -13,6 +13,7 @@ The following processed columns are extracted directly from the raw workbook:
 - `DIP_severe` from `Table 1_3 Proportions`, column 2
 - `DIP_physical` from `Table 1_3 Proportions`, column 4
 - `DIP_physical2` from `Table 1_3 Proportions`, column 5
+- `DIP_any_moe`, `DIP_severe_moe`, `DIP_physical_moe`, and `DIP_physical2_moe` from the matching columns in `Table 1_4 MoEs`
 - `Age distribution` from `Table 1_1 Estimates`, total households column, rounded half-up to match the legacy workbook
 
 ## Derived from Housing Mobility Table 2.2

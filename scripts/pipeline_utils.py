@@ -24,6 +24,7 @@ RATE_ANY_COL = "DIP_any"
 RATE_MOTOR_COL = "DIP_physical"
 RATE_SEVERE_COL = "DIP_severe"
 RATE_PHYS2_COL = "DIP_physical2"
+RATE_MOE_SUFFIX = "_moe"
 GENPOP_COL = "Age distribution"
 INMOVER_COL = "Of those who have length of tenure <1 year, what proportion are in each age bucket?"
 
@@ -48,6 +49,9 @@ MODEL_INPUT_COLUMNS = [
     *TENURE_COLUMNS,
     INMOVER_COL,
 ]
+
+RATE_COLUMNS = [RATE_ANY_COL, RATE_MOTOR_COL, RATE_SEVERE_COL, RATE_PHYS2_COL]
+RATE_MOE_COLUMNS = [f"{column}{RATE_MOE_SUFFIX}" for column in RATE_COLUMNS]
 
 DEFAULT_RAW_WORKBOOK = REPO_ROOT / "data/raw/sdac22_household_disability.xlsx"
 DEFAULT_HOUSING_MOBILITY_WORKBOOK = REPO_ROOT / "data/raw/2. Housing mobility.xlsx"
@@ -91,7 +95,8 @@ def canonicalise_model_inputs(df: pd.DataFrame) -> pd.DataFrame:
     missing = [column for column in MODEL_INPUT_COLUMNS if column not in df.columns]
     if missing:
         raise KeyError(f"Missing required columns: {missing}")
-    out = df.loc[:, MODEL_INPUT_COLUMNS].copy()
+    optional_columns = [column for column in RATE_MOE_COLUMNS if column in df.columns]
+    out = df.loc[:, [*MODEL_INPUT_COLUMNS, *optional_columns]].copy()
     out[AGE_COL] = out[AGE_COL].astype(str)
     return out
 
@@ -115,6 +120,7 @@ def validate_model_inputs(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"Age brackets must be {eng.BRACKETS}, found {brackets}")
 
     percent_like = [RATE_ANY_COL, RATE_MOTOR_COL, RATE_SEVERE_COL, RATE_PHYS2_COL, *TENURE_COLUMNS]
+    percent_like.extend(column for column in RATE_MOE_COLUMNS if column in out.columns)
     for column in percent_like:
         numeric = pd.to_numeric(out[column], errors="coerce")
         if numeric.isna().any():

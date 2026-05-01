@@ -21,6 +21,8 @@ from scripts.pipeline_utils import (
     DEFAULT_BASELINE_CONFIG,
     GENPOP_COL,
     INMOVER_COL,
+    RATE_COLUMNS,
+    RATE_MOE_SUFFIX,
     RATE_ANY_COL,
     RATE_MOTOR_COL,
     RATE_PHYS2_COL,
@@ -190,6 +192,17 @@ def prepare_simulation_inputs(df: pd.DataFrame) -> Dict[str, object]:
         RATE_MOTOR_COL: rates_motor,
         RATE_PHYS2_COL: rates_phys2,
     }
+    rate_moe_maps: Dict[str, Dict[str, float]] = {}
+    for column_name in RATE_COLUMNS:
+        moe_column = f"{column_name}{RATE_MOE_SUFFIX}"
+        if moe_column not in valid_rows.columns:
+            continue
+        rate_moe_maps[column_name] = _extract_bracketed_series(
+            valid_rows,
+            AGE_COL,
+            moe_column,
+            {bracket: 0.0 for bracket in eng.BRACKETS},
+        )
     rates = eng.AllRates(
         any_dis=eng.Rates(rates_any),
         severe_prof=eng.Rates(rates_severe),
@@ -208,6 +221,8 @@ def prepare_simulation_inputs(df: pd.DataFrame) -> Dict[str, object]:
             "general_pop_dist": [gen_probs[bracket] for bracket in eng.BRACKETS],
         }
     )
+    for column_name, moe_map in rate_moe_maps.items():
+        inputs_df[f"{column_name}_moe_input"] = [moe_map[bracket] for bracket in eng.BRACKETS]
     for index, bucket in enumerate(TENURE_BUCKETS):
         inputs_df[f"tenure_prob_{bucket}"] = [tenure.probs_by_bracket[bracket][index] for bracket in eng.BRACKETS]
 
@@ -225,6 +240,7 @@ def prepare_simulation_inputs(df: pd.DataFrame) -> Dict[str, object]:
     return {
         "rates": rates,
         "base_rate_maps": base_rate_maps,
+        "rate_moe_maps": rate_moe_maps,
         "tenure": tenure,
         "inmovers": inmovers,
         "general_pop_probs": gen_probs,
@@ -233,15 +249,53 @@ def prepare_simulation_inputs(df: pd.DataFrame) -> Dict[str, object]:
     }
 
 
-def _build_scaled_rates(base_rate_maps: Dict[str, Dict[str, float]], scenario: Dict[str, object]) -> eng.AllRates:
+def _uncertainty_cases(rate_moe_maps: Dict[str, Dict[str, float]]) -> List[str]:
+    return ["low", "base", "high"] if rate_moe_maps else ["base"]
+
+
+def _apply_uncertainty_case(
+    base_rate_maps: Dict[str, Dict[str, float]],
+    rate_moe_maps: Dict[str, Dict[str, float]],
+    uncertainty_case: str,
+) -> Dict[str, Dict[str, float]]:
+    if uncertainty_case not in {"low", "base", "high"}:
+        raise ValueError(f"Unknown uncertainty case: {uncertainty_case}")
+    if uncertainty_case == "base":
+        return {
+            column_name: {bracket: float(value) for bracket, value in values.items()}
+            for column_name, values in base_rate_maps.items()
+        }
+
+    direction = -1.0 if uncertainty_case == "low" else 1.0
+    adjusted: Dict[str, Dict[str, float]] = {}
+    for column_name, values in base_rate_maps.items():
+        moe_values = rate_moe_maps.get(column_name, {})
+        adjusted[column_name] = {
+            bracket: float(np.clip(float(value) + direction * float(moe_values.get(bracket, 0.0)), 0.0, 1.0))
+            for bracket, value in values.items()
+        }
+    return adjusted
+
+
+def _build_scaled_rates(
+    base_rate_maps: Dict[str, Dict[str, float]],
+    scenario: Dict[str, object],
+    *,
+    rate_moe_maps: Dict[str, Dict[str, float]] | None = None,
+    uncertainty_case: str = "base",
+) -> eng.AllRates:
     global_scale = float(scenario.get("rate_scale", 1.0))
     category_scales = scenario.get("rate_scales", {})
     if not isinstance(category_scales, dict):
         category_scales = {}
+    case_rate_maps = _apply_uncertainty_case(base_rate_maps, rate_moe_maps or {}, uncertainty_case)
 
     def scaled(column_name: str) -> Dict[str, float]:
         scale = float(category_scales.get(column_name, global_scale))
-        return {bracket: scale * float(base_rate_maps[column_name][bracket]) for bracket in eng.BRACKETS}
+        return {
+            bracket: float(np.clip(scale * float(case_rate_maps[column_name][bracket]), 0.0, 1.0))
+            for bracket in eng.BRACKETS
+        }
 
     return eng.AllRates(
         any_dis=eng.Rates(scaled(RATE_ANY_COL)),
@@ -340,29 +394,38 @@ def main() -> None:
             horizon_years=int(runtime["horizon_years"]),
             disabled_tenure_factor=float(scenario.get("disabled_tenure_factor", 1.0)),
         )
-        scenario_rates = _build_scaled_rates(prepared["base_rate_maps"], scenario)
+        for uncertainty_case in _uncertainty_cases(prepared["rate_moe_maps"]):
+            scenario_rates = _build_scaled_rates(
+                prepared["base_rate_maps"],
+                scenario,
+                rate_moe_maps=prepared["rate_moe_maps"],
+                uncertainty_case=uncertainty_case,
+            )
+            output_scenario_name = f"{scenario_name}_{uncertainty_case}"
 
-        print(f"\n=== Running scenario: {_scenario_title(scenario_name)} ===")
-        summary = eng.run_sim(
-            params,
-            scenario_rates,
-            prepared["tenure"],
-            prepared["inmovers"],
-            transition_model=scenario_transition_model,
-            general_pop_probs=prepared["general_pop_probs"] if params.first_draw_source == "general" else None,
-            return_time_stats=bool(runtime["return_time_stats"]),
-        )
-        summaries.append({"scenario": scenario_name, **summary})
-        resolved_scenarios.append(
-            {
-                "name": scenario_name,
-                "first_draw_source": params.first_draw_source,
-                "disabled_tenure_factor": params.disabled_tenure_factor,
-                "rate_scale": float(scenario.get("rate_scale", 1.0)),
-                "rate_scales": scenario.get("rate_scales", {}),
-                "transition_model": eng.transition_model_to_config(scenario_transition_model),
-            }
-        )
+            print(f"\n=== Running scenario: {_scenario_title(output_scenario_name)} ===")
+            summary = eng.run_sim(
+                params,
+                scenario_rates,
+                prepared["tenure"],
+                prepared["inmovers"],
+                transition_model=scenario_transition_model,
+                general_pop_probs=prepared["general_pop_probs"] if params.first_draw_source == "general" else None,
+                return_time_stats=bool(runtime["return_time_stats"]),
+            )
+            summaries.append({"scenario": output_scenario_name, "uncertainty_case": uncertainty_case, **summary})
+            resolved_scenarios.append(
+                {
+                    "name": output_scenario_name,
+                    "base_scenario": scenario_name,
+                    "uncertainty_case": uncertainty_case,
+                    "first_draw_source": params.first_draw_source,
+                    "disabled_tenure_factor": params.disabled_tenure_factor,
+                    "rate_scale": float(scenario.get("rate_scale", 1.0)),
+                    "rate_scales": scenario.get("rate_scales", {}),
+                    "transition_model": eng.transition_model_to_config(scenario_transition_model),
+                }
+            )
 
     summary_df = pd.DataFrame(summaries)
     summary_df.to_csv(output_dir / "scenario_summaries.csv", index=False)
@@ -373,7 +436,7 @@ def main() -> None:
         title = f"Scenario: {scenario['scenario']}"
         print(f"\n{title}\n" + "-" * len(title))
         for key, value in scenario.items():
-            if key == "scenario":
+            if key in {"scenario", "uncertainty_case"}:
                 continue
             print(f"{key:26s}: {value:.6f}")
 
