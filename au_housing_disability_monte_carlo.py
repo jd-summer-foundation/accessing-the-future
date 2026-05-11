@@ -388,6 +388,71 @@ def build_transition_schedule(
     return snapshots
 
 
+def _scale_all_rates(rates_2022: AllRates, scale: Dict[str, float]) -> AllRates:
+    """Scale all sub-category rates proportionally to per-bracket scale factors."""
+    def _apply(rates: Rates, cap: Optional[Dict[str, float]] = None) -> Rates:
+        scaled = {b: float(np.clip(rates.by_bracket[b] * scale.get(b, 1.0), 0.0, 1.0)) for b in BRACKETS}
+        if cap is not None:
+            scaled = {b: min(scaled[b], cap[b]) for b in BRACKETS}
+        return Rates(scaled)
+
+    any_scaled = _apply(rates_2022.any_dis)
+    any_cap = any_scaled.by_bracket
+    return AllRates(
+        any_dis=any_scaled,
+        severe_prof=_apply(rates_2022.severe_prof, any_cap),
+        motor_phys=_apply(rates_2022.motor_phys, any_cap),
+        phys2=_apply(rates_2022.phys2),
+    )
+
+
+def build_survey_history_schedule(
+    rates_2022: AllRates,
+    survey_rates_any: Dict[int, Dict[str, float]],
+    horizon_years: int,
+    start_year: int,
+) -> List[TransitionSnapshot]:
+    """
+    Build an annual transition schedule with linear interpolation between survey years.
+
+    For each calendar year in [start_year, start_year + horizon_years], rates for all
+    sub-categories are scaled proportionally to the linearly-interpolated any_dis rate
+    relative to the last survey year. Rates are held flat after the last survey year.
+
+    Args:
+        rates_2022: Model rates for the most recent survey year (with any scenario scaling applied).
+        survey_rates_any: Mapping of survey year → bracket → rate (fractions 0–1).
+        horizon_years: Simulation length in years.
+        start_year: Calendar year at which simulation time t=0 begins.
+    """
+    sorted_years = sorted(survey_rates_any.keys())
+    last_year = sorted_years[-1]
+    base_any = survey_rates_any[last_year]
+
+    def _interp_any(calendar_year: int) -> Dict[str, float]:
+        if calendar_year <= sorted_years[0]:
+            return dict(survey_rates_any[sorted_years[0]])
+        if calendar_year >= last_year:
+            return dict(survey_rates_any[last_year])
+        lo = max(y for y in sorted_years if y <= calendar_year)
+        hi = min(y for y in sorted_years if y > calendar_year)
+        w = (calendar_year - lo) / (hi - lo)
+        lo_r, hi_r = survey_rates_any[lo], survey_rates_any[hi]
+        return {b: lo_r[b] + w * (hi_r[b] - lo_r[b]) for b in BRACKETS}
+
+    snapshots: List[TransitionSnapshot] = []
+    for offset in range(int(horizon_years) + 1):
+        interp_any = _interp_any(start_year + offset)
+        scales = {
+            b: (interp_any[b] / base_any[b]) if base_any.get(b, 0.0) > 0.0 else 1.0
+            for b in BRACKETS
+        }
+        rates_at_t = _scale_all_rates(rates_2022, scales)
+        snapshots.append(TransitionSnapshot(float(offset), rates_at_t, make_profiles(rates_at_t)))
+
+    return snapshots
+
+
 def _acquire_prob(prev_rate: float, next_rate: float) -> float:
     prev = float(prev_rate)
     nxt = float(next_rate)
@@ -570,6 +635,7 @@ def run_sim(
     return_time_stats: bool = False,
     debug_age_boundary: bool = False,
     debug_print_limit: int = 20,
+    prebuilt_schedule: Optional[List[TransitionSnapshot]] = None,
 ) -> Dict[str, float]:
     """
     Run the Monte Carlo simulation over n_props dwellings.
@@ -597,7 +663,7 @@ def run_sim(
         if len(tenure.probs_by_bracket[b]) != len(tenure.buckets):
             raise ValueError(f"tenure probs length mismatch for {b}: "
                              f"{len(tenure.probs_by_bracket[b])} vs buckets {len(tenure.buckets)}")
-    schedule = build_transition_schedule(rates, params.horizon_years, transition_model)
+    schedule = prebuilt_schedule if prebuilt_schedule is not None else build_transition_schedule(rates, params.horizon_years, transition_model)
 
     # Precompute bracket widths (years until next boundary, by current bracket)
     width_map = {
