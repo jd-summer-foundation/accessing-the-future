@@ -6,17 +6,14 @@ run:
   n_props: 44346
   horizon_years: 20
   return_time_stats: true
+  start_year: 2003
 
 input:
   sheet: 0
 
 transition_model:
-  interval_years: 1
-  matrices:
-    any_dis: identity
-    severe_prof: identity
-    motor_phys: identity
-    phys2: identity
+  type: survey_history
+  survey_years: [2003, 2009, 2012, 2015, 2018, 2022]
 
 scenarios:
   - name: main_inmover_first

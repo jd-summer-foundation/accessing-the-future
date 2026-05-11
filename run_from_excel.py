@@ -20,6 +20,8 @@ from scripts.pipeline_utils import (
     AGE_COL,
     DEFAULT_BASELINE_CONFIG,
     GENPOP_COL,
+    HIST_RATE_ANY_COL_PREFIX,
+    HIST_SURVEY_YEARS,
     INMOVER_COL,
     RATE_COLUMNS,
     RATE_MOE_SUFFIX,
@@ -139,6 +141,7 @@ def _build_runtime(args: argparse.Namespace) -> Dict[str, object]:
         "return_time_stats": bool(run_cfg.get("return_time_stats", True)),
         "scenarios": config.get("scenarios") or _default_scenarios(),
         "transition_model_config": config.get("transition_model"),
+        "start_year": int(run_cfg.get("start_year", 2022)),
         "verbose": args.verbose,
         "cli_args": {key: value for key, value in vars(args).items() if value is not None and key != "verbose"},
     }
@@ -305,6 +308,29 @@ def _build_scaled_rates(
     )
 
 
+def _extract_survey_rates_any(
+    df: pd.DataFrame,
+    survey_years: List[int],
+) -> Dict[int, Dict[str, float]]:
+    """Extract historical any-disability rates from model inputs DataFrame."""
+    result: Dict[int, Dict[str, float]] = {}
+    for year in survey_years:
+        col = f"{HIST_RATE_ANY_COL_PREFIX}{year}"
+        if col not in df.columns:
+            raise ValueError(
+                f"Column '{col}' not found in model inputs. "
+                f"Run 'make build-data' to regenerate model_inputs.csv with historical rates."
+            )
+        bracket_rates: Dict[str, float] = {}
+        for bracket in eng.BRACKETS:
+            row = df.loc[df[AGE_COL] == bracket]
+            if row.empty:
+                raise ValueError(f"Missing bracket {bracket!r} in inputs")
+            bracket_rates[bracket] = _to_rate(row.iloc[0][col])
+        result[year] = bracket_rates
+    return result
+
+
 def _write_manifest(runtime: Dict[str, object], scenario_summaries: pd.DataFrame) -> None:
     input_path = runtime["input_path"]
     config_path = runtime["config_path"]
@@ -371,7 +397,9 @@ def main() -> None:
     if runtime["verbose"]:
         print(f"Reading model inputs from: {runtime['input_path']}")
 
-    df = load_model_inputs(Path(runtime["input_path"]), sheet=runtime["sheet"])
+    input_path = Path(runtime["input_path"])
+    df = load_model_inputs(input_path, sheet=runtime["sheet"])
+    df_raw = pd.read_csv(input_path) if input_path.suffix == ".csv" else pd.read_excel(input_path, sheet_name=runtime["sheet"])
     prepared = prepare_simulation_inputs(df)
     prepared["inputs_df"].to_csv(output_dir / "inputs_used.csv", index=False)
     prepared["profiles_df"].to_csv(output_dir / "profiles_used.csv", index=False)
@@ -386,7 +414,19 @@ def main() -> None:
         scenario_transition_config = (
             scenario["transition_model"] if "transition_model" in scenario else runtime["transition_model_config"]
         )
-        scenario_transition_model = eng.transition_model_from_config(scenario_transition_config)
+        is_survey_history = (
+            isinstance(scenario_transition_config, dict)
+            and scenario_transition_config.get("type") == "survey_history"
+        )
+
+        if is_survey_history:
+            survey_years = list(scenario_transition_config.get("survey_years", HIST_SURVEY_YEARS))
+            survey_rates_any = _extract_survey_rates_any(df_raw, survey_years)
+            scenario_transition_model = None
+        else:
+            survey_rates_any = {}
+            scenario_transition_model = eng.transition_model_from_config(scenario_transition_config)
+
         params = eng.SimParams(
             n_props=int(runtime["n_props"]),
             seed=int(runtime["seed"]),
@@ -403,6 +443,16 @@ def main() -> None:
             )
             output_scenario_name = f"{scenario_name}_{uncertainty_case}"
 
+            if is_survey_history:
+                prebuilt = eng.build_survey_history_schedule(
+                    scenario_rates,
+                    survey_rates_any,
+                    horizon_years=int(runtime["horizon_years"]),
+                    start_year=int(runtime["start_year"]),
+                )
+            else:
+                prebuilt = None
+
             print(f"\n=== Running scenario: {_scenario_title(output_scenario_name)} ===")
             summary = eng.run_sim(
                 params,
@@ -412,6 +462,7 @@ def main() -> None:
                 transition_model=scenario_transition_model,
                 general_pop_probs=prepared["general_pop_probs"] if params.first_draw_source == "general" else None,
                 return_time_stats=bool(runtime["return_time_stats"]),
+                prebuilt_schedule=prebuilt,
             )
             summaries.append({"scenario": output_scenario_name, "uncertainty_case": uncertainty_case, **summary})
             resolved_scenarios.append(
@@ -423,7 +474,11 @@ def main() -> None:
                     "disabled_tenure_factor": params.disabled_tenure_factor,
                     "rate_scale": float(scenario.get("rate_scale", 1.0)),
                     "rate_scales": scenario.get("rate_scales", {}),
-                    "transition_model": eng.transition_model_to_config(scenario_transition_model),
+                    "transition_model": (
+                        {"type": "survey_history", "survey_years": list(survey_rates_any.keys())}
+                        if is_survey_history
+                        else eng.transition_model_to_config(scenario_transition_model)
+                    ),
                 }
             )
 

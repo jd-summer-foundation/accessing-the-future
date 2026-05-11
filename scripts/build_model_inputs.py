@@ -18,11 +18,15 @@ if str(ROOT) not in sys.path:
 from scripts.pipeline_utils import (
     AGE_COL,
     DEFAULT_DERIVATION_CONFIG,
+    DEFAULT_HISTORICAL_ANY_DIS_CSV,
     DEFAULT_HOUSING_MOBILITY_WORKBOOK,
     DEFAULT_MODEL_INPUT_CSV,
     DEFAULT_MODEL_INPUT_XLSX,
     DEFAULT_RAW_WORKBOOK,
     GENPOP_COL,
+    HIST_RATE_ANY_COL_PREFIX,
+    HIST_RATE_COLUMNS,
+    HIST_SURVEY_YEARS,
     INMOVER_COL,
     MODEL_INPUT_COLUMNS,
     RATE_COLUMNS,
@@ -48,6 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-csv", type=Path, default=None, help="Override processed CSV output path.")
     parser.add_argument("--output-excel", type=Path, default=None, help="Override processed Excel output path.")
     parser.add_argument("--oracle", type=Path, default=None, help="Optional comparison workbook for full-frame checking.")
+    parser.add_argument("--historical-csv", type=Path, default=None, help="Override path to historical any-disability CSV.")
     return parser.parse_args()
 
 
@@ -117,11 +122,74 @@ def _load_housing_mobility_profiles(
     return tenure_by_bracket, inmover_distribution
 
 
+_FINE_TO_MODEL_BRACKET: Dict[str, str] = {
+    "15-24": "15-24",
+    "25-34": "25-34",
+    "35-44": "35-44",
+    "45-54": "45-54",
+    "55-59": "55-64",
+    "60-64": "55-64",
+    "65-69": "65-74",
+    "70-74": "65-74",
+    "75-79": "75+",
+    "80-84": "75+",
+    "85-89": "75+",
+    "90+":   "75+",
+}
+
+
+def load_historical_any_dis(
+    csv_path: Path | None = None,
+) -> Dict[int, Dict[str, float]]:
+    """
+    Read historical 'any disability' rates and aggregate to model age brackets.
+
+    Input CSV has columns: age_group, 2003, 2009, 2012, 2015, 2018, 2022
+    Rates are in percent (0-100). Returns fractions (0-1).
+
+    Finer brackets are averaged to model brackets:
+      55-59 + 60-64  →  55-64
+      65-69 + 70-74  →  65-74
+      75-79 + 80-84 + 85-89 + 90+  →  75+
+    """
+    path = csv_path or DEFAULT_HISTORICAL_ANY_DIS_CSV
+    df = pd.read_csv(path, dtype=str)
+    df["age_group"] = df["age_group"].str.strip()
+
+    from au_housing_disability_monte_carlo import BRACKETS
+
+    result: Dict[int, Dict[str, float]] = {}
+    for year in HIST_SURVEY_YEARS:
+        col = str(year)
+        if col not in df.columns:
+            raise ValueError(f"historical_any_dis.csv missing column '{col}'")
+
+        sums: Dict[str, float] = {b: 0.0 for b in BRACKETS}
+        counts: Dict[str, int] = {b: 0 for b in BRACKETS}
+        for _, row in df.iterrows():
+            fine = str(row["age_group"]).strip()
+            model_bracket = _FINE_TO_MODEL_BRACKET.get(fine)
+            if model_bracket is None:
+                continue
+            val = float(str(row[col]).strip())
+            sums[model_bracket] += val
+            counts[model_bracket] += 1
+
+        missing = [b for b in BRACKETS if counts[b] == 0]
+        if missing:
+            raise ValueError(f"historical_any_dis.csv: no rows map to model brackets {missing} for year {year}")
+
+        result[year] = {b: (sums[b] / counts[b]) / 100.0 for b in BRACKETS}
+
+    return result
+
+
 def build_model_inputs(
     config_path: Path,
     *,
     raw_workbook: Path | None = None,
     mobility_workbook: Path | None = None,
+    historical_csv: Path | None = None,
 ) -> pd.DataFrame:
     config = load_yaml(config_path)
     workbook = raw_workbook or _resolve_configured_path(config, "raw_workbook", DEFAULT_RAW_WORKBOOK)
@@ -164,7 +232,15 @@ def build_model_inputs(
     for column in [*RATE_COLUMNS, *optional_moe_columns]:
         df[column] = df[column].astype(float)
     df[GENPOP_COL] = df[GENPOP_COL].astype(int)
-    return validate_model_inputs(df)
+    df = validate_model_inputs(df)
+
+    hist_rates = load_historical_any_dis(historical_csv)
+    for year in HIST_SURVEY_YEARS:
+        col = f"{HIST_RATE_ANY_COL_PREFIX}{year}"
+        from au_housing_disability_monte_carlo import BRACKETS
+        df[col] = [float(hist_rates[year][b]) for b in BRACKETS]
+
+    return df
 
 
 def main() -> None:
@@ -174,6 +250,7 @@ def main() -> None:
         args.config,
         raw_workbook=args.raw_workbook,
         mobility_workbook=args.mobility_workbook,
+        historical_csv=args.historical_csv,
     )
 
     output_csv = args.output_csv or ROOT / config.get("processed_csv", str(DEFAULT_MODEL_INPUT_CSV.relative_to(ROOT)))
