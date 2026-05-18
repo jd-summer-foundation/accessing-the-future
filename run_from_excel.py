@@ -86,7 +86,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Australian housing disability Monte Carlo from processed model inputs.")
     parser.add_argument("--config", type=Path, default=DEFAULT_BASELINE_CONFIG, help="Path to YAML run configuration.")
     parser.add_argument("--input", type=Path, default=None, help="Processed input CSV or Excel workbook.")
-    parser.add_argument("--excel", type=Path, default=None, help="Deprecated alias for --input.")
     parser.add_argument("--sheet", default=None, help="Sheet name or index when reading Excel inputs.")
     parser.add_argument("--outdir", type=Path, default=None, help="Override output directory.")
     parser.add_argument("--n-props", type=int, default=None, help="Override number of dwellings to simulate.")
@@ -122,7 +121,7 @@ def _build_runtime(args: argparse.Namespace) -> Dict[str, object]:
     input_cfg = config.get("input", {}) if isinstance(config.get("input", {}), dict) else {}
 
     configured_input = _resolve_path(run_cfg.get("input_path")) if run_cfg else None
-    input_path = resolve_input_path(args.input or args.excel or configured_input)
+    input_path = resolve_input_path(args.input or configured_input)
     output_dir = args.outdir or _resolve_path(run_cfg.get("output_dir")) or SCRIPT_DIR / "results/baseline"
 
     runtime = {
@@ -413,23 +412,17 @@ def main() -> None:
         scenario_transition_config = (
             scenario["transition_model"] if "transition_model" in scenario else runtime["transition_model_config"]
         )
-        is_trend = (
-            isinstance(scenario_transition_config, dict)
-            and scenario_transition_config.get("type") == "trend"
-        )
+        if not isinstance(scenario_transition_config, dict) or scenario_transition_config.get("type") != "trend":
+            raise ValueError("transition_model.type must be 'trend'")
 
-        if is_trend:
-            base_year = int(scenario_transition_config.get("base_year", 2022))
-            if base_year != int(runtime["start_year"]):
-                raise ValueError(
-                    f"transition_model.base_year ({base_year}) must equal "
-                    f"run.start_year ({int(runtime['start_year'])})"
-                )
-            trend = str(scenario.get("trend", scenario_transition_config.get("trend", "none")))
-            any_base = _extract_survey_rates_any(df_raw, [base_year])[base_year]
-            scenario_transition_model = None
-        else:
-            scenario_transition_model = eng.transition_model_from_config(scenario_transition_config)
+        base_year = int(scenario_transition_config.get("base_year", 2022))
+        if base_year != int(runtime["start_year"]):
+            raise ValueError(
+                f"transition_model.base_year ({base_year}) must equal "
+                f"run.start_year ({int(runtime['start_year'])})"
+            )
+        trend = str(scenario.get("trend", scenario_transition_config.get("trend", "none")))
+        any_base = _extract_survey_rates_any(df_raw, [base_year])[base_year]
 
         params = eng.SimParams(
             n_props=int(runtime["n_props"]),
@@ -447,15 +440,12 @@ def main() -> None:
             )
             output_scenario_name = f"{scenario_name}_{uncertainty_case}"
 
-            if is_trend:
-                prebuilt = eng.build_trend_schedule(
-                    scenario_rates,
-                    any_base,
-                    trend,
-                    horizon_years=int(runtime["horizon_years"]),
-                )
-            else:
-                prebuilt = None
+            prebuilt = eng.build_trend_schedule(
+                scenario_rates,
+                any_base,
+                trend,
+                horizon_years=int(runtime["horizon_years"]),
+            )
 
             print(f"\n=== Running scenario: {_scenario_title(output_scenario_name)} ===")
             summary = eng.run_sim(
@@ -463,7 +453,6 @@ def main() -> None:
                 scenario_rates,
                 prepared["tenure"],
                 prepared["inmovers"],
-                transition_model=scenario_transition_model,
                 general_pop_probs=prepared["general_pop_probs"] if params.first_draw_source == "general" else None,
                 return_time_stats=bool(runtime["return_time_stats"]),
                 prebuilt_schedule=prebuilt,
@@ -471,7 +460,7 @@ def main() -> None:
             summaries.append({
                 "scenario": output_scenario_name,
                 "uncertainty_case": uncertainty_case,
-                "trend": trend if is_trend else None,
+                "trend": trend,
                 **summary,
             })
             resolved_scenarios.append(
@@ -479,16 +468,12 @@ def main() -> None:
                     "name": output_scenario_name,
                     "base_scenario": scenario_name,
                     "uncertainty_case": uncertainty_case,
-                    "trend": trend if is_trend else None,
+                    "trend": trend,
                     "first_draw_source": params.first_draw_source,
                     "disabled_tenure_factor": params.disabled_tenure_factor,
                     "rate_scale": float(scenario.get("rate_scale", 1.0)),
                     "rate_scales": scenario.get("rate_scales", {}),
-                    "transition_model": (
-                        {"type": "trend", "trend": trend, "base_year": base_year}
-                        if is_trend
-                        else eng.transition_model_to_config(scenario_transition_model)
-                    ),
+                    "transition_model": {"type": "trend", "trend": trend, "base_year": base_year},
                 }
             )
 

@@ -32,7 +32,6 @@ import time
 
 BRACKETS: List[str] = ["15-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75+"]
 BRACKET_IDX = {b: i for i, b in enumerate(BRACKETS)}
-TRANSITION_SERIES: Tuple[str, ...] = ("any_dis", "severe_prof", "motor_phys", "phys2")
 
 # Forward-projection trends off the base year. Only "none" (hold base-year
 # rates flat) is implemented; "linear" and "mid" are reserved for later steps.
@@ -101,43 +100,6 @@ class SimParams:
 
     # If household currently has ANY/SEVERE/PHYSICAL, lengthen tenure by this factor (e.g. 1.2)
     disabled_tenure_factor: float = 1.0
-
-
-@dataclass(frozen=True)
-class TransitionModel:
-    """Calendar-time update rules for age-bracketed rate vectors."""
-
-    interval_years: int
-    matrices: Dict[str, np.ndarray]
-
-    def __post_init__(self) -> None:
-        if isinstance(self.interval_years, bool) or int(self.interval_years) != self.interval_years:
-            raise ValueError(f"interval_years must be a positive integer, got {self.interval_years!r}")
-        if int(self.interval_years) <= 0:
-            raise ValueError(f"interval_years must be positive, got {self.interval_years}")
-
-        missing = [name for name in TRANSITION_SERIES if name not in self.matrices]
-        if missing:
-            raise ValueError(f"TransitionModel.matrices missing series: {missing}")
-
-        extras = sorted(name for name in self.matrices if name not in TRANSITION_SERIES)
-        if extras:
-            raise ValueError(f"TransitionModel.matrices has unexpected series: {extras}")
-
-        normalised: Dict[str, np.ndarray] = {}
-        expected_shape = (len(BRACKETS), len(BRACKETS))
-        for name in TRANSITION_SERIES:
-            arr = np.asarray(self.matrices[name], dtype=float)
-            if arr.shape != expected_shape:
-                raise ValueError(f"{name} transition matrix must have shape {expected_shape}, got {arr.shape}")
-            if np.any(~np.isfinite(arr)):
-                raise ValueError(f"{name} transition matrix contains NaN/inf values")
-            arr = arr.copy()
-            arr.setflags(write=False)
-            normalised[name] = arr
-
-        object.__setattr__(self, "interval_years", int(self.interval_years))
-        object.__setattr__(self, "matrices", normalised)
 
 
 @dataclass(frozen=True)
@@ -292,106 +254,6 @@ def make_profiles(all_rates: AllRates) -> Dict[str, object]:
     }
 
 
-def transition_model_from_config(config: object | None) -> Optional[TransitionModel]:
-    """Parse a YAML-style transition-model mapping into a validated TransitionModel."""
-    if config is None:
-        return None
-    if not isinstance(config, dict):
-        raise ValueError(f"transition_model must be a mapping, found {type(config).__name__}")
-
-    interval_years = config.get("interval_years", 1)
-    matrices_cfg = config.get("matrices")
-    if not isinstance(matrices_cfg, dict):
-        raise ValueError("transition_model.matrices must be a mapping")
-
-    missing = [name for name in TRANSITION_SERIES if name not in matrices_cfg]
-    if missing:
-        raise ValueError(f"transition_model.matrices missing series: {missing}")
-
-    extras = sorted(name for name in matrices_cfg if name not in TRANSITION_SERIES)
-    if extras:
-        raise ValueError(f"transition_model.matrices has unexpected series: {extras}")
-
-    expected_shape = (len(BRACKETS), len(BRACKETS))
-    matrices: Dict[str, np.ndarray] = {}
-    for name in TRANSITION_SERIES:
-        value = matrices_cfg[name]
-        if isinstance(value, str):
-            if value != "identity":
-                raise ValueError(f"{name} transition matrix string must be 'identity', got {value!r}")
-            matrices[name] = np.eye(len(BRACKETS), dtype=float)
-            continue
-
-        try:
-            arr = np.asarray(value, dtype=float)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"{name} transition matrix must be numeric") from exc
-
-        if arr.shape != expected_shape:
-            raise ValueError(f"{name} transition matrix must have shape {expected_shape}, got {arr.shape}")
-        if np.any(~np.isfinite(arr)):
-            raise ValueError(f"{name} transition matrix contains NaN/inf values")
-        matrices[name] = arr
-
-    return TransitionModel(interval_years=interval_years, matrices=matrices)
-
-
-def transition_model_to_config(transition_model: Optional[TransitionModel]) -> Optional[Dict[str, object]]:
-    """Convert a TransitionModel into a JSON/YAML-serialisable mapping."""
-    if transition_model is None:
-        return None
-    return {
-        "interval_years": int(transition_model.interval_years),
-        "matrices": {
-            name: transition_model.matrices[name].tolist()
-            for name in TRANSITION_SERIES
-        },
-    }
-
-
-def _rates_to_vector(rates: Rates) -> np.ndarray:
-    return np.asarray([float(rates.by_bracket[bracket]) for bracket in BRACKETS], dtype=float)
-
-
-def _vector_to_rates(values: np.ndarray) -> Rates:
-    clipped = np.clip(np.asarray(values, dtype=float), 0.0, 1.0)
-    return Rates({bracket: float(clipped[index]) for index, bracket in enumerate(BRACKETS)})
-
-
-def apply_transition_model_once(rates: AllRates, transition_model: TransitionModel) -> AllRates:
-    """Apply one calendar-time transition step to the raw rate vectors."""
-    return AllRates(
-        any_dis=_vector_to_rates(transition_model.matrices["any_dis"] @ _rates_to_vector(rates.any_dis)),
-        severe_prof=_vector_to_rates(transition_model.matrices["severe_prof"] @ _rates_to_vector(rates.severe_prof)),
-        motor_phys=_vector_to_rates(transition_model.matrices["motor_phys"] @ _rates_to_vector(rates.motor_phys)),
-        phys2=_vector_to_rates(transition_model.matrices["phys2"] @ _rates_to_vector(rates.phys2)),
-    )
-
-
-def build_transition_schedule(
-    base_rates: AllRates,
-    horizon_years: int,
-    transition_model: Optional[TransitionModel] = None,
-) -> List[TransitionSnapshot]:
-    """Precompute profile snapshots for each calendar-time update boundary."""
-    snapshots = [TransitionSnapshot(time_year=0.0, rates=base_rates, profiles=make_profiles(base_rates))]
-    if transition_model is None:
-        return snapshots
-
-    current_rates = base_rates
-    n_steps = int(horizon_years) // int(transition_model.interval_years)
-    for step in range(1, n_steps + 1):
-        current_rates = apply_transition_model_once(current_rates, transition_model)
-        snapshots.append(
-            TransitionSnapshot(
-                time_year=float(step * transition_model.interval_years),
-                rates=current_rates,
-                profiles=make_profiles(current_rates),
-            )
-        )
-    return snapshots
-
-
 def _scale_all_rates(rates_2022: AllRates, scale: Dict[str, float]) -> AllRates:
     """Scale all sub-category rates proportionally to per-bracket scale factors."""
     def _apply(rates: Rates, cap: Optional[Dict[str, float]] = None) -> Rates:
@@ -408,55 +270,6 @@ def _scale_all_rates(rates_2022: AllRates, scale: Dict[str, float]) -> AllRates:
         motor_phys=_apply(rates_2022.motor_phys, any_cap),
         phys2=_apply(rates_2022.phys2),
     )
-
-
-def build_survey_history_schedule(
-    rates_2022: AllRates,
-    survey_rates_any: Dict[int, Dict[str, float]],
-    horizon_years: int,
-    start_year: int,
-) -> List[TransitionSnapshot]:
-    """
-    Deprecated: superseded by build_trend_schedule; retained for backward compatibility.
-
-    Build an annual transition schedule with linear interpolation between survey years.
-
-    For each calendar year in [start_year, start_year + horizon_years], rates for all
-    sub-categories are scaled proportionally to the linearly-interpolated any_dis rate
-    relative to the last survey year. Rates are held flat after the last survey year.
-
-    Args:
-        rates_2022: Model rates for the most recent survey year (with any scenario scaling applied).
-        survey_rates_any: Mapping of survey year → bracket → rate (fractions 0–1).
-        horizon_years: Simulation length in years.
-        start_year: Calendar year at which simulation time t=0 begins.
-    """
-    sorted_years = sorted(survey_rates_any.keys())
-    last_year = sorted_years[-1]
-    base_any = survey_rates_any[last_year]
-
-    def _interp_any(calendar_year: int) -> Dict[str, float]:
-        if calendar_year <= sorted_years[0]:
-            return dict(survey_rates_any[sorted_years[0]])
-        if calendar_year >= last_year:
-            return dict(survey_rates_any[last_year])
-        lo = max(y for y in sorted_years if y <= calendar_year)
-        hi = min(y for y in sorted_years if y > calendar_year)
-        w = (calendar_year - lo) / (hi - lo)
-        lo_r, hi_r = survey_rates_any[lo], survey_rates_any[hi]
-        return {b: lo_r[b] + w * (hi_r[b] - lo_r[b]) for b in BRACKETS}
-
-    snapshots: List[TransitionSnapshot] = []
-    for offset in range(int(horizon_years) + 1):
-        interp_any = _interp_any(start_year + offset)
-        scales = {
-            b: (interp_any[b] / base_any[b]) if base_any.get(b, 0.0) > 0.0 else 1.0
-            for b in BRACKETS
-        }
-        rates_at_t = _scale_all_rates(rates_2022, scales)
-        snapshots.append(TransitionSnapshot(float(offset), rates_at_t, make_profiles(rates_at_t)))
-
-    return snapshots
 
 
 def build_trend_schedule(
@@ -481,6 +294,13 @@ def build_trend_schedule(
         trend: One of TREND_TYPES.
         horizon_years: Simulation length in years.
     """
+    _validate_bracketed_dict("any_2022", any_2022)
+    any_values = np.asarray([float(any_2022[b]) for b in BRACKETS], dtype=float)
+    if np.any(~np.isfinite(any_values)):
+        raise ValueError("any_2022 contains NaN/inf values")
+    if np.any((any_values < 0.0) | (any_values > 1.0)):
+        raise ValueError("any_2022 rates must be fractions between 0 and 1")
+
     if trend not in TREND_TYPES:
         raise ValueError(
             f"Unknown or unimplemented trend {trend!r}; supported: {TREND_TYPES}"
@@ -633,14 +453,6 @@ def _sample_from_cdf(cdf: np.ndarray, rng: np.random.Generator) -> int:
     return int(np.searchsorted(cdf, rng.random(), side="right"))
 
 
-def sample_from_discrete(probs: List[float], rng: np.random.Generator) -> int:
-    """Sample an index from a probability vector. Validates on each call - prefer _prepare_cdf + _sample_from_cdf for hot loops."""
-    p = _validate_probs("sample_from_discrete.probs", probs)
-    cdf = np.cumsum(p)
-    u = rng.random()
-    return int(np.searchsorted(cdf, u, side="right"))
-
-
 def sample_tenure_years(bucket: str, rng: np.random.Generator) -> float:
     """
     Convert a tenure bucket label into a sampled tenure duration in years.
@@ -671,11 +483,8 @@ def run_sim(
     rates: AllRates,
     tenure: TenureDist,
     inmovers: InMoverDist,
-    transition_model: Optional[TransitionModel] = None,
     general_pop_probs: Optional[Dict[str, float]] = None,
     return_time_stats: bool = False,
-    debug_age_boundary: bool = False,
-    debug_print_limit: int = 20,
     prebuilt_schedule: Optional[List[TransitionSnapshot]] = None,
 ) -> Dict[str, float]:
     """
@@ -683,8 +492,6 @@ def run_sim(
 
     Returns a summary dict of probabilities (and optional time stats).
     """
-
-    debug_prints_done = 0
 
     rng = np.random.default_rng(params.seed)
 
@@ -704,7 +511,9 @@ def run_sim(
         if len(tenure.probs_by_bracket[b]) != len(tenure.buckets):
             raise ValueError(f"tenure probs length mismatch for {b}: "
                              f"{len(tenure.probs_by_bracket[b])} vs buckets {len(tenure.buckets)}")
-    schedule = prebuilt_schedule if prebuilt_schedule is not None else build_transition_schedule(rates, params.horizon_years, transition_model)
+    schedule = prebuilt_schedule if prebuilt_schedule is not None else [
+        TransitionSnapshot(time_year=0.0, rates=rates, profiles=make_profiles(rates))
+    ]
 
     # Precompute bracket widths (years until next boundary, by current bracket)
     width_map = {
@@ -790,12 +599,6 @@ def run_sim(
         current_snapshot = schedule[transition_idx]
         br = pick_first_bracket()
         yrs_to_boundary = years_to_boundary_at_move_in(br)
-        if debug_age_boundary and debug_prints_done < debug_print_limit:
-            print(
-                f"[DEBUG] Move-in bracket={br}, "
-                f"yrs_to_boundary={yrs_to_boundary:.1f}"
-            )
-            debug_prints_done += 1
 
         # Seed first household statuses from prevalence at starting bracket
         # motor_phys is conditional on any_dis (subtype); phys2 is independent (separate process)
@@ -867,8 +670,6 @@ def run_sim(
                 # Calendar-time transitions are processed first when both happen at the same instant.
                 if hit_age_boundary and br != "75+" and t < float(params.horizon_years):
                     next_br = BRACKETS[BRACKET_IDX[br] + 1]
-                    if debug_age_boundary and debug_prints_done < debug_print_limit:
-                        print(f"[DEBUG] Aged into bracket {next_br} at t={t:.1f}")
 
                     any_d, sev_d, phys_d, phys2_d = _apply_age_boundary_transition(
                         br,
@@ -892,12 +693,6 @@ def run_sim(
                 # Subsequent households always use in-mover distribution
                 br = BRACKETS[_sample_from_cdf(inmover_cdf, rng)]
                 yrs_to_boundary = years_to_boundary_at_move_in(br)
-                if debug_age_boundary and debug_prints_done < debug_print_limit:
-                    print(
-                        f"[DEBUG] Move-in bracket={br}, "
-                        f"yrs_to_boundary={yrs_to_boundary:.1f}"
-                    )
-                    debug_prints_done += 1
 
                 any_d, sev_d, phys_d, phys2_d = _seed_household_state(br, current_snapshot.profiles, rng)
 
@@ -924,21 +719,3 @@ def run_sim(
         })
 
     return results
-
-
-if __name__ == "__main__":
-    # Minimal smoke-test
-    any_rates =  {"15-24":0.08,"25-34":0.09,"35-44":0.11,"45-54":0.15,"55-64":0.20,"65-74":0.28,"75+":0.45}
-    sev_rates =  {"15-24":0.02,"25-34":0.02,"35-44":0.03,"45-54":0.05,"55-64":0.07,"65-74":0.11,"75+":0.20}
-    phys_rates = {"15-24":0.05,"25-34":0.06,"35-44":0.08,"45-54":0.12,"55-64":0.16,"65-74":0.22,"75+":0.30}
-    phys2_rates = {"15-24":0.10,"25-34":0.12,"35-44":0.14,"45-54":0.18,"55-64":0.22,"65-74":0.30,"75+":0.40}
-
-    buckets = ["<1","1-2","2-3","3-4","5-9","10-19","20+"]
-    probs_by_bracket = {b:[0.1,0.1,0.1,0.1,0.25,0.25,0.1] for b in BRACKETS}
-    tenure = TenureDist(buckets=buckets, probs_by_bracket=probs_by_bracket)
-
-    inmovers = InMoverDist({b: 1/len(BRACKETS) for b in BRACKETS})
-    rates = AllRates(Rates(any_rates), Rates(sev_rates), Rates(phys_rates), Rates(phys2_rates))
-
-    params = SimParams(n_props=2000, seed=1, first_draw_source="inmover")
-    print("Self-test summary:", run_sim(params, rates, tenure, inmovers, return_time_stats=True))

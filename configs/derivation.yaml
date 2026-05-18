@@ -1,8 +1,6 @@
 raw_workbook: data/raw/sdac22_household_disability.xlsx
 housing_mobility_workbook: data/raw/2. Housing mobility.xlsx
-legacy_oracle_workbook: data/processed/legacy_model_inputs.xlsx
 processed_csv: data/processed/model_inputs.csv
-processed_excel: data/processed/model_inputs.xlsx
 
 raw_tables:
   estimates_sheet: Table 1_1 Estimates

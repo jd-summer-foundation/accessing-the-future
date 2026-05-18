@@ -14,7 +14,7 @@ The following processed columns are extracted directly from the raw workbook:
 - `DIP_physical` from `Table 1_3 Proportions`, column 4
 - `DIP_physical2` from `Table 1_3 Proportions`, column 5
 - `DIP_any_moe`, `DIP_severe_moe`, `DIP_physical_moe`, and `DIP_physical2_moe` from the matching columns in `Table 1_4 MoEs`
-- `Age distribution` from `Table 1_1 Estimates`, total households column, rounded half-up to match the legacy workbook
+- `Age distribution` from `Table 1_1 Estimates`, total households column, rounded half-up.
 
 ## Derived from Housing Mobility Table 2.2
 
@@ -25,6 +25,6 @@ The following processed columns are extracted directly from the raw workbook:
 
 `Table 2.5` is intentionally not used because it collapses `65 and over` into one bin and therefore cannot reproduce the model's separate `65-74` and `75+` categories.
 
-## Validation oracle
+## Validation
 
-The legacy processed workbook [data/processed/legacy_model_inputs.xlsx](processed/legacy_model_inputs.xlsx) is retained only as a migration reference. The canonical starting point for reproduction is the pair of raw workbooks plus the derivation config, not the legacy workbook.
+The canonical starting point for reproduction is the pair of raw workbooks plus the derivation config. `make validate-data` rebuilds the processed input from those sources and compares it with [data/processed/model_inputs.csv](processed/model_inputs.csv).

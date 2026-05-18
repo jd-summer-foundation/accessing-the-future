@@ -8,7 +8,6 @@
 ## `data/processed/`
 - Contains deterministic artifacts produced by the build step.
 - Canonical processed input: [model_inputs.csv](processed/model_inputs.csv)
-- Legacy oracle workbook for parity checks: [legacy_model_inputs.xlsx](processed/legacy_model_inputs.xlsx)
 
 ## Workflow
 

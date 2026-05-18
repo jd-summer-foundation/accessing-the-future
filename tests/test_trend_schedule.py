@@ -64,3 +64,10 @@ def test_shared_scaling_path_matches_unit_scale() -> None:
 def test_unimplemented_trend_raises(trend: str) -> None:
     with pytest.raises(ValueError):
         eng.build_trend_schedule(_make_rates(), _uniform_rates(0.20), trend, horizon_years=5)
+
+
+def test_base_year_any_rates_are_validated() -> None:
+    invalid = _uniform_rates(0.20)
+    invalid["75+"] = 1.2
+    with pytest.raises(ValueError, match="fractions between 0 and 1"):
+        eng.build_trend_schedule(_make_rates(), invalid, "none", horizon_years=5)

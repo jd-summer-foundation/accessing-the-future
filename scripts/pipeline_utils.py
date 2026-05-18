@@ -7,7 +7,6 @@ import hashlib
 import importlib.metadata
 import json
 import subprocess
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
@@ -62,8 +61,6 @@ DEFAULT_HISTORICAL_ANY_DIS_CSV = REPO_ROOT / "data/raw/historical_any_dis.csv"
 DEFAULT_RAW_WORKBOOK = REPO_ROOT / "data/raw/sdac22_household_disability.xlsx"
 DEFAULT_HOUSING_MOBILITY_WORKBOOK = REPO_ROOT / "data/raw/2. Housing mobility.xlsx"
 DEFAULT_MODEL_INPUT_CSV = REPO_ROOT / "data/processed/model_inputs.csv"
-DEFAULT_MODEL_INPUT_XLSX = REPO_ROOT / "data/processed/model_inputs.xlsx"
-DEFAULT_LEGACY_ORACLE = REPO_ROOT / "data/processed/legacy_model_inputs.xlsx"
 DEFAULT_DERIVATION_CONFIG = REPO_ROOT / "configs/derivation.yaml"
 DEFAULT_BASELINE_CONFIG = REPO_ROOT / "configs/baseline.yaml"
 DEFAULT_SMOKE_CONFIG = REPO_ROOT / "configs/smoke.yaml"
@@ -167,9 +164,6 @@ def resolve_input_path(requested: Path | None = None) -> Path:
         return requested
     candidates = [
         DEFAULT_MODEL_INPUT_CSV,
-        DEFAULT_MODEL_INPUT_XLSX,
-        DEFAULT_LEGACY_ORACLE,
-        REPO_ROOT / "inputs/Data for modelling.xlsx",
     ]
     for candidate in candidates:
         if candidate.exists():
@@ -279,7 +273,3 @@ def compare_model_frames(left: pd.DataFrame, right: pd.DataFrame, *, tolerance: 
                 f"{left_numeric.iloc[idx]} != {right_numeric.iloc[idx]}"
             )
     return diffs
-
-
-def print_stderr(message: str) -> None:
-    print(message, file=sys.stderr)

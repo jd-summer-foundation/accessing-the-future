@@ -13,7 +13,6 @@ def _args(config: Path, *, horizon_years: int | None = None) -> argparse.Namespa
     return argparse.Namespace(
         config=config,
         input=ROOT / "data/processed/model_inputs.csv",
-        excel=None,
         sheet=None,
         outdir=None,
         n_props=None,

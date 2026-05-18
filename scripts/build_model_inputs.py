@@ -21,7 +21,6 @@ from scripts.pipeline_utils import (
     DEFAULT_HISTORICAL_ANY_DIS_CSV,
     DEFAULT_HOUSING_MOBILITY_WORKBOOK,
     DEFAULT_MODEL_INPUT_CSV,
-    DEFAULT_MODEL_INPUT_XLSX,
     DEFAULT_RAW_WORKBOOK,
     GENPOP_COL,
     HIST_RATE_ANY_COL_PREFIX,
@@ -50,7 +49,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--raw-workbook", type=Path, default=None, help="Override raw workbook path.")
     parser.add_argument("--mobility-workbook", type=Path, default=None, help="Override housing mobility workbook path.")
     parser.add_argument("--output-csv", type=Path, default=None, help="Override processed CSV output path.")
-    parser.add_argument("--output-excel", type=Path, default=None, help="Override processed Excel output path.")
+    parser.add_argument("--output-excel", type=Path, default=None, help="Optional processed Excel output path.")
     parser.add_argument("--oracle", type=Path, default=None, help="Optional comparison workbook for full-frame checking.")
     parser.add_argument("--historical-csv", type=Path, default=None, help="Override path to historical any-disability CSV.")
     return parser.parse_args()
@@ -254,7 +253,7 @@ def main() -> None:
     )
 
     output_csv = args.output_csv or ROOT / config.get("processed_csv", str(DEFAULT_MODEL_INPUT_CSV.relative_to(ROOT)))
-    output_excel = args.output_excel or ROOT / config.get("processed_excel", str(DEFAULT_MODEL_INPUT_XLSX.relative_to(ROOT)))
+    output_excel = args.output_excel
     oracle = args.oracle
 
     if oracle is not None and oracle.exists():

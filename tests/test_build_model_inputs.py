@@ -7,7 +7,6 @@ from scripts.pipeline_utils import (
     AGE_COL,
     DEFAULT_DERIVATION_CONFIG,
     DEFAULT_HOUSING_MOBILITY_WORKBOOK,
-    DEFAULT_LEGACY_ORACLE,
     INMOVER_COL,
     RATE_ANY_COL,
     RATE_MOE_SUFFIX,
@@ -15,7 +14,6 @@ from scripts.pipeline_utils import (
     RATE_PHYS2_COL,
     RATE_SEVERE_COL,
     TENURE_COLUMNS,
-    load_model_inputs,
 )
 
 HOUSING_MOBILITY_AGE_LABELS = {
@@ -45,11 +43,13 @@ def test_housing_mobility_age_rows_are_present() -> None:
     assert list(rows.keys()) == list(HOUSING_MOBILITY_AGE_LABELS.keys())
 
 
-def test_tenure_columns_match_legacy_oracle() -> None:
+def test_tenure_columns_match_raw_housing_mobility_table() -> None:
     generated = build_model_inputs(DEFAULT_DERIVATION_CONFIG)
-    oracle = load_model_inputs(DEFAULT_LEGACY_ORACLE)
-    for column in TENURE_COLUMNS:
-        pd.testing.assert_series_equal(generated[column], oracle[column], check_names=False)
+    rows = _load_housing_mobility_rows()
+    for age_bracket, row in rows.items():
+        generated_row = generated.loc[generated[AGE_COL] == age_bracket].iloc[0]
+        for column_index, column in enumerate(TENURE_COLUMNS, start=1):
+            assert generated_row[column] == pytest.approx(float(row.iloc[column_index]))
 
 
 def test_inmover_distribution_is_derived_from_lt1_counts() -> None:
