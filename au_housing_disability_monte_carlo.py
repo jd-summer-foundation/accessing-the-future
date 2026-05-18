@@ -34,6 +34,10 @@ BRACKETS: List[str] = ["15-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75
 BRACKET_IDX = {b: i for i, b in enumerate(BRACKETS)}
 TRANSITION_SERIES: Tuple[str, ...] = ("any_dis", "severe_prof", "motor_phys", "phys2")
 
+# Forward-projection trends off the base year. Only "none" (hold base-year
+# rates flat) is implemented; "linear" and "mid" are reserved for later steps.
+TREND_TYPES: Tuple[str, ...] = ("none",)
+
 DEFAULT_HORIZON_YEARS = 20
 
 
@@ -413,6 +417,8 @@ def build_survey_history_schedule(
     start_year: int,
 ) -> List[TransitionSnapshot]:
     """
+    Deprecated: superseded by build_trend_schedule; retained for backward compatibility.
+
     Build an annual transition schedule with linear interpolation between survey years.
 
     For each calendar year in [start_year, start_year + horizon_years], rates for all
@@ -450,6 +456,41 @@ def build_survey_history_schedule(
         rates_at_t = _scale_all_rates(rates_2022, scales)
         snapshots.append(TransitionSnapshot(float(offset), rates_at_t, make_profiles(rates_at_t)))
 
+    return snapshots
+
+
+def build_trend_schedule(
+    rates_2022: AllRates,
+    any_2022: Dict[str, float],
+    trend: str,
+    horizon_years: int,
+) -> List[TransitionSnapshot]:
+    """
+    Build an annual transition schedule projecting rates forward from the base year.
+
+    Only the "none" trend is implemented: each bracket's base-year rate is held
+    flat for the whole horizon (the lower-bound scenario). "linear" and "mid"
+    are reserved for later steps and raise ValueError until implemented.
+
+    Rates route through _scale_all_rates with a unit scale so the clamping and
+    subtype-capping path is identical to the trends added later.
+
+    Args:
+        rates_2022: Model rates for the base year (with scenario scaling applied).
+        any_2022: Base-year any-disability rate per bracket (fractions 0–1).
+        trend: One of TREND_TYPES.
+        horizon_years: Simulation length in years.
+    """
+    if trend not in TREND_TYPES:
+        raise ValueError(
+            f"Unknown or unimplemented trend {trend!r}; supported: {TREND_TYPES}"
+        )
+
+    scales = {b: 1.0 for b in BRACKETS}
+    snapshots: List[TransitionSnapshot] = []
+    for offset in range(int(horizon_years) + 1):
+        rates_at_t = _scale_all_rates(rates_2022, scales)
+        snapshots.append(TransitionSnapshot(float(offset), rates_at_t, make_profiles(rates_at_t)))
     return snapshots
 
 

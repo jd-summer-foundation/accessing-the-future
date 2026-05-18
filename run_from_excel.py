@@ -21,7 +21,6 @@ from scripts.pipeline_utils import (
     DEFAULT_BASELINE_CONFIG,
     GENPOP_COL,
     HIST_RATE_ANY_COL_PREFIX,
-    HIST_SURVEY_YEARS,
     INMOVER_COL,
     RATE_COLUMNS,
     RATE_MOE_SUFFIX,
@@ -414,17 +413,22 @@ def main() -> None:
         scenario_transition_config = (
             scenario["transition_model"] if "transition_model" in scenario else runtime["transition_model_config"]
         )
-        is_survey_history = (
+        is_trend = (
             isinstance(scenario_transition_config, dict)
-            and scenario_transition_config.get("type") == "survey_history"
+            and scenario_transition_config.get("type") == "trend"
         )
 
-        if is_survey_history:
-            survey_years = list(scenario_transition_config.get("survey_years", HIST_SURVEY_YEARS))
-            survey_rates_any = _extract_survey_rates_any(df_raw, survey_years)
+        if is_trend:
+            base_year = int(scenario_transition_config.get("base_year", 2022))
+            if base_year != int(runtime["start_year"]):
+                raise ValueError(
+                    f"transition_model.base_year ({base_year}) must equal "
+                    f"run.start_year ({int(runtime['start_year'])})"
+                )
+            trend = str(scenario.get("trend", scenario_transition_config.get("trend", "none")))
+            any_base = _extract_survey_rates_any(df_raw, [base_year])[base_year]
             scenario_transition_model = None
         else:
-            survey_rates_any = {}
             scenario_transition_model = eng.transition_model_from_config(scenario_transition_config)
 
         params = eng.SimParams(
@@ -443,12 +447,12 @@ def main() -> None:
             )
             output_scenario_name = f"{scenario_name}_{uncertainty_case}"
 
-            if is_survey_history:
-                prebuilt = eng.build_survey_history_schedule(
+            if is_trend:
+                prebuilt = eng.build_trend_schedule(
                     scenario_rates,
-                    survey_rates_any,
+                    any_base,
+                    trend,
                     horizon_years=int(runtime["horizon_years"]),
-                    start_year=int(runtime["start_year"]),
                 )
             else:
                 prebuilt = None
@@ -464,19 +468,25 @@ def main() -> None:
                 return_time_stats=bool(runtime["return_time_stats"]),
                 prebuilt_schedule=prebuilt,
             )
-            summaries.append({"scenario": output_scenario_name, "uncertainty_case": uncertainty_case, **summary})
+            summaries.append({
+                "scenario": output_scenario_name,
+                "uncertainty_case": uncertainty_case,
+                "trend": trend if is_trend else None,
+                **summary,
+            })
             resolved_scenarios.append(
                 {
                     "name": output_scenario_name,
                     "base_scenario": scenario_name,
                     "uncertainty_case": uncertainty_case,
+                    "trend": trend if is_trend else None,
                     "first_draw_source": params.first_draw_source,
                     "disabled_tenure_factor": params.disabled_tenure_factor,
                     "rate_scale": float(scenario.get("rate_scale", 1.0)),
                     "rate_scales": scenario.get("rate_scales", {}),
                     "transition_model": (
-                        {"type": "survey_history", "survey_years": list(survey_rates_any.keys())}
-                        if is_survey_history
+                        {"type": "trend", "trend": trend, "base_year": base_year}
+                        if is_trend
                         else eng.transition_model_to_config(scenario_transition_model)
                     ),
                 }
@@ -491,7 +501,7 @@ def main() -> None:
         title = f"Scenario: {scenario['scenario']}"
         print(f"\n{title}\n" + "-" * len(title))
         for key, value in scenario.items():
-            if key in {"scenario", "uncertainty_case"}:
+            if key in {"scenario", "uncertainty_case", "trend"}:
                 continue
             print(f"{key:26s}: {value:.6f}")
 
