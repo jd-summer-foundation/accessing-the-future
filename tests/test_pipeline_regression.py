@@ -72,7 +72,6 @@ def test_baseline_regression_matches_expected_fixture(tmp_path: Path) -> None:
     ]
     assert len(manifest["resolved_scenarios"]) == 12
     assert manifest["resolved_scenarios"][0]["uncertainty_case"] == "low"
-    assert manifest["resolved_scenarios"][0]["transition_model"]["type"] == "survey_history"
-    assert manifest["resolved_scenarios"][0]["transition_model"]["survey_years"] == [
-        2003, 2009, 2012, 2015, 2018, 2022
-    ]
+    assert manifest["resolved_scenarios"][0]["transition_model"]["type"] == "trend"
+    assert manifest["resolved_scenarios"][0]["transition_model"]["trend"] == "none"
+    assert manifest["resolved_scenarios"][0]["transition_model"]["base_year"] == 2022
