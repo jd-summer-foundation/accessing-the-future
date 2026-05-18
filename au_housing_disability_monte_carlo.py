@@ -150,7 +150,7 @@ def _cumulative_max_monotone(vals: List[float]) -> List[float]:
     return out
 
 
-def acquire_probs_from_adjusted(adjusted_rates: Dict[str, float]) -> Dict[Tuple[str, str], float]:
+def _acquire_probs_from_adjusted(adjusted_rates: Dict[str, float]) -> Dict[Tuple[str, str], float]:
     """
     Given an adjusted (non-decreasing) prevalence profile across age brackets,
     compute acquisition probabilities for transitions b0 -> b1 under persistence:
@@ -221,8 +221,8 @@ def make_profiles(all_rates: AllRates) -> Dict[str, object]:
     cond_phys = build_cond_subtype(all_rates.motor_phys.by_bracket)
 
     # Acquisition probs
-    acq_any = acquire_probs_from_adjusted(adj_any)
-    acq_phys2 = acquire_probs_from_adjusted(adj_phys2)
+    acq_any = _acquire_probs_from_adjusted(adj_any)
+    acq_phys2 = _acquire_probs_from_adjusted(adj_phys2)
 
     # For conditional profiles, build monotone *total* first then compute conditional acquisition
     # by applying the same adjusted ANY totals. Here we just use the conditional profile + ANY transitions:
