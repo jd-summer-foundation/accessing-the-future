@@ -102,14 +102,14 @@ def generate_reports(results_dir: Path, reports_dir: Path) -> dict[str, object]:
     figure_2 = figures_dir / f"{FIGURE_2_NAME}.png"
     _grouped_bar(
         df,
-        ["p_ever_any", "p_ever_severe", "p_ever_physical", "p_ever_physical2"],
+        ["p_ever_any", "p_ever_physical"],
         "Probability a dwelling ever hosts a relevant household type",
         "Probability over configured horizon",
         figure_1,
     )
     _grouped_bar(
         df,
-        ["pct_time_any", "pct_time_severe", "pct_time_physical", "pct_time_physical2"],
+        ["pct_time_any", "pct_time_physical"],
         "Average share of dwelling occupancy time by household type",
         "Share of occupied time",
         figure_2,

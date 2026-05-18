@@ -21,8 +21,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 AGE_COL = "Age of Reference Person (Years)"
 RATE_ANY_COL = "DIP_any"
 RATE_MOTOR_COL = "DIP_physical"
-RATE_SEVERE_COL = "DIP_severe"
-RATE_PHYS2_COL = "DIP_physical2"
 RATE_MOE_SUFFIX = "_moe"
 GENPOP_COL = "Age distribution"
 INMOVER_COL = "Of those who have length of tenure <1 year, what proportion are in each age bucket?"
@@ -42,14 +40,12 @@ MODEL_INPUT_COLUMNS = [
     AGE_COL,
     RATE_ANY_COL,
     RATE_MOTOR_COL,
-    RATE_SEVERE_COL,
-    RATE_PHYS2_COL,
     GENPOP_COL,
     *TENURE_COLUMNS,
     INMOVER_COL,
 ]
 
-RATE_COLUMNS = [RATE_ANY_COL, RATE_MOTOR_COL, RATE_SEVERE_COL, RATE_PHYS2_COL]
+RATE_COLUMNS = [RATE_ANY_COL, RATE_MOTOR_COL]
 RATE_MOE_COLUMNS = [f"{column}{RATE_MOE_SUFFIX}" for column in RATE_COLUMNS]
 
 HIST_RATE_ANY_COL_PREFIX = "DIP_any_hist_"
@@ -122,7 +118,7 @@ def validate_model_inputs(df: pd.DataFrame) -> pd.DataFrame:
     if brackets != eng.BRACKETS:
         raise ValueError(f"Age brackets must be {eng.BRACKETS}, found {brackets}")
 
-    percent_like = [RATE_ANY_COL, RATE_MOTOR_COL, RATE_SEVERE_COL, RATE_PHYS2_COL, *TENURE_COLUMNS]
+    percent_like = [RATE_ANY_COL, RATE_MOTOR_COL, *TENURE_COLUMNS]
     percent_like.extend(column for column in RATE_MOE_COLUMNS if column in out.columns)
     for column in percent_like:
         numeric = pd.to_numeric(out[column], errors="coerce")

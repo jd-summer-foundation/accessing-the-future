@@ -33,8 +33,6 @@ from scripts.pipeline_utils import (
     RATE_MOE_SUFFIX,
     RATE_ANY_COL,
     RATE_MOTOR_COL,
-    RATE_PHYS2_COL,
-    RATE_SEVERE_COL,
     TENURE_COLUMNS,
     compare_model_frames,
     load_model_inputs,
