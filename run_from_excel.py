@@ -26,8 +26,6 @@ from scripts.pipeline_utils import (
     RATE_MOE_SUFFIX,
     RATE_ANY_COL,
     RATE_MOTOR_COL,
-    RATE_PHYS2_COL,
-    RATE_SEVERE_COL,
     TENURE_BUCKETS,
     TENURE_COLUMNS,
     artifact_checksums,
@@ -175,23 +173,17 @@ def prepare_simulation_inputs(df: pd.DataFrame) -> Dict[str, object]:
     tenure = eng.TenureDist(buckets=TENURE_BUCKETS, probs_by_bracket=probs_by_bracket)
 
     fallback_any = {"15-24": 0.06, "25-34": 0.08, "35-44": 0.11, "45-54": 0.15, "55-64": 0.21, "65-74": 0.30, "75+": 0.48}
-    fallback_severe = {"15-24": 0.02, "25-34": 0.02, "35-44": 0.03, "45-54": 0.05, "55-64": 0.07, "65-74": 0.11, "75+": 0.20}
     fallback_motor = {"15-24": 0.01, "25-34": 0.015, "35-44": 0.02, "45-54": 0.04, "55-64": 0.06, "65-74": 0.10, "75+": 0.18}
 
     rates_any = _extract_bracketed_series(valid_rows, AGE_COL, RATE_ANY_COL, fallback_any)
-    rates_severe = _extract_bracketed_series(valid_rows, AGE_COL, RATE_SEVERE_COL, fallback_severe)
     rates_motor = _extract_bracketed_series(valid_rows, AGE_COL, RATE_MOTOR_COL, fallback_motor)
-    rates_phys2 = _extract_bracketed_series(valid_rows, AGE_COL, RATE_PHYS2_COL, fallback_motor)
 
     for bracket in eng.BRACKETS:
-        rates_severe[bracket] = min(float(rates_severe[bracket]), float(rates_any[bracket]))
         rates_motor[bracket] = min(float(rates_motor[bracket]), float(rates_any[bracket]))
 
     base_rate_maps = {
         RATE_ANY_COL: rates_any,
-        RATE_SEVERE_COL: rates_severe,
         RATE_MOTOR_COL: rates_motor,
-        RATE_PHYS2_COL: rates_phys2,
     }
     rate_moe_maps: Dict[str, Dict[str, float]] = {}
     for column_name in RATE_COLUMNS:
@@ -206,18 +198,14 @@ def prepare_simulation_inputs(df: pd.DataFrame) -> Dict[str, object]:
         )
     rates = eng.AllRates(
         any_dis=eng.Rates(rates_any),
-        severe_prof=eng.Rates(rates_severe),
         motor_phys=eng.Rates(rates_motor),
-        phys2=eng.Rates(rates_phys2),
     )
 
     inputs_df = pd.DataFrame(
         {
             "age_bracket": eng.BRACKETS,
             "any_rate_input": [rates_any[bracket] for bracket in eng.BRACKETS],
-            "severe_rate_input": [rates_severe[bracket] for bracket in eng.BRACKETS],
             "motor_phys_rate_input": [rates_motor[bracket] for bracket in eng.BRACKETS],
-            "phys2_rate_input": [rates_phys2[bracket] for bracket in eng.BRACKETS],
             "inmover_dist": [inmover_probs[bracket] for bracket in eng.BRACKETS],
             "general_pop_dist": [gen_probs[bracket] for bracket in eng.BRACKETS],
         }
@@ -232,9 +220,7 @@ def prepare_simulation_inputs(df: pd.DataFrame) -> Dict[str, object]:
         {
             "age_bracket": eng.BRACKETS,
             "adj_any": [profiles["adj_any"][bracket] for bracket in eng.BRACKETS],
-            "cond_severe_given_any": [profiles["cond_severe"][bracket] for bracket in eng.BRACKETS],
             "cond_motor_phys_given_any": [profiles["cond_phys"][bracket] for bracket in eng.BRACKETS],
-            "adj_phys2": [profiles["adj_phys2"][bracket] for bracket in eng.BRACKETS],
         }
     )
 
@@ -300,9 +286,7 @@ def _build_scaled_rates(
 
     return eng.AllRates(
         any_dis=eng.Rates(scaled(RATE_ANY_COL)),
-        severe_prof=eng.Rates(scaled(RATE_SEVERE_COL)),
         motor_phys=eng.Rates(scaled(RATE_MOTOR_COL)),
-        phys2=eng.Rates(scaled(RATE_PHYS2_COL)),
     )
 
 

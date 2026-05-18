@@ -4,7 +4,7 @@ from pathlib import Path
 import au_housing_disability_monte_carlo as eng
 import pytest
 from run_from_excel import _build_runtime, _build_scaled_rates, _uncertainty_cases
-from scripts.pipeline_utils import RATE_ANY_COL, RATE_MOTOR_COL, RATE_PHYS2_COL, RATE_SEVERE_COL
+from scripts.pipeline_utils import RATE_ANY_COL, RATE_MOTOR_COL
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -66,14 +66,10 @@ def test_scaled_rates_apply_low_and_high_moe_bounds() -> None:
     base_maps = {
         RATE_ANY_COL: {bracket: 0.235 for bracket in eng.BRACKETS},
         RATE_MOTOR_COL: {bracket: 0.136 for bracket in eng.BRACKETS},
-        RATE_SEVERE_COL: {bracket: 0.068 for bracket in eng.BRACKETS},
-        RATE_PHYS2_COL: {bracket: 0.396 for bracket in eng.BRACKETS},
     }
     moe_maps = {
         RATE_ANY_COL: {bracket: 0.039 for bracket in eng.BRACKETS},
         RATE_MOTOR_COL: {bracket: 0.039 for bracket in eng.BRACKETS},
-        RATE_SEVERE_COL: {bracket: 0.024 for bracket in eng.BRACKETS},
-        RATE_PHYS2_COL: {bracket: 0.047 for bracket in eng.BRACKETS},
     }
 
     low = _build_scaled_rates(base_maps, {"rate_scale": 1.0}, rate_moe_maps=moe_maps, uncertainty_case="low")

@@ -21,15 +21,9 @@ column_mappings:
   DIP_any:
     sheet: proportions
     column_index: 1
-  DIP_severe:
-    sheet: proportions
-    column_index: 2
   DIP_physical:
     sheet: proportions
     column_index: 4
-  DIP_physical2:
-    sheet: proportions
-    column_index: 5
   "Age distribution":
     sheet: estimates
     column_index: 7

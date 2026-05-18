@@ -11,8 +11,6 @@ from scripts.pipeline_utils import (
     RATE_ANY_COL,
     RATE_MOE_SUFFIX,
     RATE_MOTOR_COL,
-    RATE_PHYS2_COL,
-    RATE_SEVERE_COL,
     TENURE_COLUMNS,
 )
 
@@ -74,5 +72,3 @@ def test_disability_rate_moes_are_extracted_from_matching_table() -> None:
     row = generated.loc[generated[AGE_COL] == "15-24"].iloc[0]
     assert row[f"{RATE_ANY_COL}{RATE_MOE_SUFFIX}"] == pytest.approx(3.9)
     assert row[f"{RATE_MOTOR_COL}{RATE_MOE_SUFFIX}"] == pytest.approx(3.9)
-    assert row[f"{RATE_SEVERE_COL}{RATE_MOE_SUFFIX}"] == pytest.approx(2.4)
-    assert row[f"{RATE_PHYS2_COL}{RATE_MOE_SUFFIX}"] == pytest.approx(4.7)

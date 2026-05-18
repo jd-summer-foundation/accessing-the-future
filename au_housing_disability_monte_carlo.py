@@ -13,12 +13,10 @@ Households:
 
 Categories tracked (household-level):
 1) any_dis: any disability (base category; prevalence by age bracket; enforced non-decreasing with age)
-2) severe_prof: severe/profound disability, modelled as a SUBTYPE of any_dis (conditional on any_dis)
-3) motor_phys: mobility/physical disability proxy, modelled as a SUBTYPE of any_dis (conditional on any_dis)
-4) phys2: long-term physical condition NOT necessarily disability, modelled INDEPENDENTLY of any_dis
+2) motor_phys: mobility/physical disability proxy, modelled as a SUBTYPE of any_dis (conditional on any_dis)
 
 Outputs (summary dict):
-- p_ever_any, p_ever_severe, p_ever_physical, p_ever_physical2
+- p_ever_any, p_ever_physical
 - optionally: mean % of time a dwelling is occupied by a household with each category
 """
 
@@ -57,18 +55,12 @@ class AllRates:
 
     Interpretation used in the simulation:
     - any_dis is the base disability category.
-    - severe_prof is a subtype of any_dis (severe_prof ⊆ any_dis).
     - motor_phys is a subtype of any_dis (motor_phys ⊆ any_dis).
       Implementation: we convert total motor_phys rates into conditional P(motor_phys | any_dis)
       using the adjusted any_dis profile.
-    - phys2 is independent of any_dis (separate process; not a subtype).
-
-    Note: "subset" here is a modelling choice: motor_phys and severe_prof only occur when any_dis is true.
     """
     any_dis: Rates
-    severe_prof: Rates
     motor_phys: Rates
-    phys2: Rates
 
 
 @dataclass(frozen=True)
@@ -98,7 +90,7 @@ class SimParams:
     #   "general" -> draw age from general population distribution (supplied separately)
     first_draw_source: str = "inmover"
 
-    # If household currently has ANY/SEVERE/PHYSICAL, lengthen tenure by this factor (e.g. 1.2)
+    # If household currently has ANY/PHYSICAL, lengthen tenure by this factor (e.g. 1.2)
     disabled_tenure_factor: float = 1.0
 
 
@@ -175,34 +167,21 @@ def make_profiles(all_rates: AllRates) -> Dict[str, object]:
     Build adjusted profiles and acquisition probabilities for:
 
       - ANY disability (base): monotone with age via cumulative max
-      - severe_prof: conditional on ANY (subtype)
       - motor_phys: conditional on ANY (subtype)
-      - phys2: independent of ANY (separate monotone profile)
 
     Returned dict includes:
       - adj_any[b]
-      - cond_severe[b]  = P(severe_prof | any_dis)
       - cond_phys[b]    = P(motor_phys | any_dis)
-      - adj_phys2[b]
       - acq_any[(b,b1)]
-      - acq_cond_severe[(b,b1)]
       - acq_cond_phys[(b,b1)]
-      - acq_phys2[(b,b1)]
     """
     _validate_bracketed_dict("any_dis", all_rates.any_dis.by_bracket)
-    _validate_bracketed_dict("severe_prof", all_rates.severe_prof.by_bracket)
     _validate_bracketed_dict("motor_phys", all_rates.motor_phys.by_bracket)
-    _validate_bracketed_dict("phys2", all_rates.phys2.by_bracket)
 
-    # 1) ANY: enforce non-decreasing prevalence
+    # ANY: enforce non-decreasing prevalence
     ordered_any = [float(all_rates.any_dis.by_bracket[b]) for b in BRACKETS]
     adj_any_list = _cumulative_max_monotone(ordered_any)
     adj_any = dict(zip(BRACKETS, adj_any_list))
-
-    # 2) phys2: enforce non-decreasing prevalence
-    ordered_phys2 = [float(all_rates.phys2.by_bracket[b]) for b in BRACKETS]
-    adj_phys2_list = _cumulative_max_monotone(ordered_phys2)
-    adj_phys2 = dict(zip(BRACKETS, adj_phys2_list))
 
     # Helper to build conditional P(subtype | any) from subtype total + ANY adjusted totals
     def build_cond_subtype(total_by_bracket: Dict[str, float]) -> Dict[str, float]:
@@ -217,12 +196,10 @@ def make_profiles(all_rates: AllRates) -> Dict[str, object]:
                 cond[b] = float(np.clip(rt / ra, 0.0, 1.0))
         return cond
 
-    cond_severe = build_cond_subtype(all_rates.severe_prof.by_bracket)
     cond_phys = build_cond_subtype(all_rates.motor_phys.by_bracket)
 
     # Acquisition probs
     acq_any = _acquire_probs_from_adjusted(adj_any)
-    acq_phys2 = _acquire_probs_from_adjusted(adj_phys2)
 
     # For conditional profiles, build monotone *total* first then compute conditional acquisition
     # by applying the same adjusted ANY totals. Here we just use the conditional profile + ANY transitions:
@@ -239,18 +216,13 @@ def make_profiles(all_rates: AllRates) -> Dict[str, object]:
                 probs[(b0, b1)] = (c1 - c0) / (1.0 - c0)
         return probs
 
-    acq_cond_severe = acq_from_cond(cond_severe)
     acq_cond_phys = acq_from_cond(cond_phys)
 
     return {
         "adj_any": adj_any,
-        "cond_severe": cond_severe,
         "cond_phys": cond_phys,
-        "adj_phys2": adj_phys2,
         "acq_any": acq_any,
-        "acq_cond_severe": acq_cond_severe,
         "acq_cond_phys": acq_cond_phys,
-        "acq_phys2": acq_phys2,
     }
 
 
@@ -266,9 +238,7 @@ def _scale_all_rates(rates_2022: AllRates, scale: Dict[str, float]) -> AllRates:
     any_cap = any_scaled.by_bracket
     return AllRates(
         any_dis=any_scaled,
-        severe_prof=_apply(rates_2022.severe_prof, any_cap),
         motor_phys=_apply(rates_2022.motor_phys, any_cap),
-        phys2=_apply(rates_2022.phys2),
     )
 
 
@@ -335,21 +305,13 @@ def _seed_household_state(
     bracket: str,
     profiles: Dict[str, object],
     rng: np.random.Generator,
-) -> Tuple[bool, bool, bool, bool]:
+) -> Tuple[bool, bool]:
     adj_any = profiles["adj_any"]
-    cond_severe = profiles["cond_severe"]
     cond_phys = profiles["cond_phys"]
-    adj_phys2 = profiles["adj_phys2"]
 
     any_d = rng.random() < float(adj_any[bracket])
-    if any_d:
-        sev_d = rng.random() < float(cond_severe[bracket])
-        phys_d = rng.random() < float(cond_phys[bracket])
-    else:
-        sev_d = False
-        phys_d = False
-    phys2_d = rng.random() < float(adj_phys2[bracket])
-    return any_d, sev_d, phys_d, phys2_d
+    phys_d = rng.random() < float(cond_phys[bracket]) if any_d else False
+    return any_d, phys_d
 
 
 def _apply_time_step_transition(
@@ -358,10 +320,8 @@ def _apply_time_step_transition(
     next_profiles: Dict[str, object],
     rng: np.random.Generator,
     any_d: bool,
-    sev_d: bool,
     phys_d: bool,
-    phys2_d: bool,
-) -> Tuple[bool, bool, bool, bool]:
+) -> Tuple[bool, bool]:
     became_any_now = False
 
     if not any_d:
@@ -372,18 +332,9 @@ def _apply_time_step_transition(
 
     if any_d:
         if became_any_now:
-            if not sev_d and _event_occurs(float(next_profiles["cond_severe"][bracket]), rng):
-                sev_d = True
             if not phys_d and _event_occurs(float(next_profiles["cond_phys"][bracket]), rng):
                 phys_d = True
         else:
-            if not sev_d:
-                p_sev = _acquire_prob(
-                    float(prev_profiles["cond_severe"][bracket]),
-                    float(next_profiles["cond_severe"][bracket]),
-                )
-                if _event_occurs(p_sev, rng):
-                    sev_d = True
             if not phys_d:
                 p_phys = _acquire_prob(
                     float(prev_profiles["cond_phys"][bracket]),
@@ -392,12 +343,7 @@ def _apply_time_step_transition(
                 if _event_occurs(p_phys, rng):
                     phys_d = True
 
-    if not phys2_d:
-        p_phys2 = _acquire_prob(float(prev_profiles["adj_phys2"][bracket]), float(next_profiles["adj_phys2"][bracket]))
-        if _event_occurs(p_phys2, rng):
-            phys2_d = True
-
-    return any_d, sev_d, phys_d, phys2_d
+    return any_d, phys_d
 
 
 def _apply_age_boundary_transition(
@@ -406,10 +352,8 @@ def _apply_age_boundary_transition(
     profiles: Dict[str, object],
     rng: np.random.Generator,
     any_d: bool,
-    sev_d: bool,
     phys_d: bool,
-    phys2_d: bool,
-) -> Tuple[bool, bool, bool, bool]:
+) -> Tuple[bool, bool]:
     became_any_now = False
 
     if not any_d:
@@ -420,26 +364,15 @@ def _apply_age_boundary_transition(
 
     if any_d:
         if became_any_now:
-            if not sev_d and rng.random() < float(profiles["cond_severe"][next_bracket]):
-                sev_d = True
             if not phys_d and rng.random() < float(profiles["cond_phys"][next_bracket]):
                 phys_d = True
         else:
-            if not sev_d:
-                p_sev = float(profiles["acq_cond_severe"].get((bracket, next_bracket), 0.0))
-                if rng.random() < p_sev:
-                    sev_d = True
             if not phys_d:
                 p_phys = float(profiles["acq_cond_phys"].get((bracket, next_bracket), 0.0))
                 if rng.random() < p_phys:
                     phys_d = True
 
-    if not phys2_d:
-        p_phys2 = float(profiles["acq_phys2"].get((bracket, next_bracket), 0.0))
-        if rng.random() < p_phys2:
-            phys2_d = True
-
-    return any_d, sev_d, phys_d, phys2_d
+    return any_d, phys_d
 
 
 def _prepare_cdf(name: str, probs: List[float]) -> np.ndarray:
@@ -567,14 +500,10 @@ def run_sim(
         return BRACKETS[idx]
 
     ever_any = np.zeros(params.n_props, dtype=bool)
-    ever_sev = np.zeros(params.n_props, dtype=bool)
     ever_phys = np.zeros(params.n_props, dtype=bool)
-    ever_phys2 = np.zeros(params.n_props, dtype=bool)
 
     time_any = np.zeros(params.n_props)
-    time_sev = np.zeros(params.n_props)
     time_phys = np.zeros(params.n_props)
-    time_phys2 = np.zeros(params.n_props)
     time_total = np.zeros(params.n_props)
 
     t_buckets = tenure.buckets
@@ -601,13 +530,10 @@ def run_sim(
         yrs_to_boundary = years_to_boundary_at_move_in(br)
 
         # Seed first household statuses from prevalence at starting bracket
-        # motor_phys is conditional on any_dis (subtype); phys2 is independent (separate process)
-        any_d, sev_d, phys_d, phys2_d = _seed_household_state(br, current_snapshot.profiles, rng)
+        any_d, phys_d = _seed_household_state(br, current_snapshot.profiles, rng)
 
         ever_any[i] = ever_any[i] or any_d
-        ever_sev[i] = ever_sev[i] or sev_d
         ever_phys[i] = ever_phys[i] or phys_d
-        ever_phys2[i] = ever_phys2[i] or phys2_d
 
         # Dwelling occupancy lifecycle
         while t < float(params.horizon_years):
@@ -615,8 +541,8 @@ def run_sim(
             b_idx = _sample_from_cdf(tenure_cdfs[br], rng)
             dur = sample_tenure_years(t_buckets[b_idx], rng)
 
-            # Extend tenure if disabled household (any/severe/physical)
-            if params.disabled_tenure_factor != 1.0 and (any_d or sev_d or phys_d):
+            # Extend tenure if disabled household (any/physical)
+            if params.disabled_tenure_factor != 1.0 and (any_d or phys_d):
                 dur *= float(params.disabled_tenure_factor)
 
             remaining = dur
@@ -633,12 +559,8 @@ def run_sim(
                 time_total[i] += seg
                 if any_d:
                     time_any[i] += seg
-                if sev_d:
-                    time_sev[i] += seg
                 if phys_d:
                     time_phys[i] += seg
-                if phys2_d:
-                    time_phys2[i] += seg
 
                 t += seg
                 remaining -= seg
@@ -651,42 +573,34 @@ def run_sim(
                     prev_profiles = current_snapshot.profiles
                     transition_idx += 1
                     current_snapshot = schedule[transition_idx]
-                    any_d, sev_d, phys_d, phys2_d = _apply_time_step_transition(
+                    any_d, phys_d = _apply_time_step_transition(
                         br,
                         prev_profiles,
                         current_snapshot.profiles,
                         rng,
                         any_d,
-                        sev_d,
                         phys_d,
-                        phys2_d,
                     )
                     ever_any[i] = ever_any[i] or any_d
-                    ever_sev[i] = ever_sev[i] or sev_d
                     ever_phys[i] = ever_phys[i] or phys_d
-                    ever_phys2[i] = ever_phys2[i] or phys2_d
 
                 # If we've hit a bracket boundary, transition to next bracket and apply acquisitions.
                 # Calendar-time transitions are processed first when both happen at the same instant.
                 if hit_age_boundary and br != "75+" and t < float(params.horizon_years):
                     next_br = BRACKETS[BRACKET_IDX[br] + 1]
 
-                    any_d, sev_d, phys_d, phys2_d = _apply_age_boundary_transition(
+                    any_d, phys_d = _apply_age_boundary_transition(
                         br,
                         next_br,
                         current_snapshot.profiles,
                         rng,
                         any_d,
-                        sev_d,
                         phys_d,
-                        phys2_d,
                     )
                     br = next_br
                     yrs_to_boundary = width_map[br]  # now at the start of the new bracket
                     ever_any[i] = ever_any[i] or any_d
-                    ever_sev[i] = ever_sev[i] or sev_d
                     ever_phys[i] = ever_phys[i] or phys_d
-                    ever_phys2[i] = ever_phys2[i] or phys2_d
 
             # Tenure ended -> household moves out -> new household moves in
             if t < float(params.horizon_years):
@@ -694,18 +608,14 @@ def run_sim(
                 br = BRACKETS[_sample_from_cdf(inmover_cdf, rng)]
                 yrs_to_boundary = years_to_boundary_at_move_in(br)
 
-                any_d, sev_d, phys_d, phys2_d = _seed_household_state(br, current_snapshot.profiles, rng)
+                any_d, phys_d = _seed_household_state(br, current_snapshot.profiles, rng)
 
                 ever_any[i] = ever_any[i] or any_d
-                ever_sev[i] = ever_sev[i] or sev_d
                 ever_phys[i] = ever_phys[i] or phys_d
-                ever_phys2[i] = ever_phys2[i] or phys2_d
 
     results: Dict[str, float] = {
         "p_ever_any": float(ever_any.mean()),
-        "p_ever_severe": float(ever_sev.mean()),
         "p_ever_physical": float(ever_phys.mean()),
-        "p_ever_physical2": float(ever_phys2.mean()),
     }
 
     if return_time_stats:
@@ -713,9 +623,7 @@ def run_sim(
         denom = np.where(time_total > 0, time_total, 1.0)
         results.update({
             "pct_time_any": float((time_any / denom).mean()),
-            "pct_time_severe": float((time_sev / denom).mean()),
             "pct_time_physical": float((time_phys / denom).mean()),
-            "pct_time_physical2": float((time_phys2 / denom).mean()),
         })
 
     return results
