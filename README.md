@@ -84,7 +84,7 @@ make smoke
 
 ### Process
 - [scripts/build_model_inputs.py](scripts/build_model_inputs.py) extracts disability prevalence, margin-of-error bounds, and household totals from SDAC22, tenure distributions from Housing Mobility Table 2.2, and derives the in-mover distribution from raw `<1 year` tenure counts by age.
-- [run_from_excel.py](run_from_excel.py) reads `data/processed/model_inputs.csv`, normalizes distributions, expands each configured scenario into low/base/high confidence-bound cases when MoE inputs are available, and writes run manifests.
+- [run_from_excel.py](run_from_excel.py) reads `data/processed/model_inputs.csv`, normalizes distributions, projects disability rates forward under the configured trend (see [Time-Varying Disability Rates](#time-varying-disability-rates)), expands each configured scenario into low/base/high confidence-bound cases when MoE inputs are available, and writes run manifests.
 - [scripts/generate_reports.py](scripts/generate_reports.py) converts scenario summaries into one table and two figures.
 
 ### Outputs
@@ -100,16 +100,42 @@ make smoke
 
 ## Reproducibility Notes
 
-- Fixed defaults for the baseline run live in [configs/baseline.yaml](configs/baseline.yaml): `seed=123`, `n_props=44346`, `horizon_years=20`.
+- Fixed defaults for the baseline run live in [configs/baseline.yaml](configs/baseline.yaml): `seed=123`, `n_props=44346`, `horizon_years=20`, `start_year=2022` (the SDAC base year the trend projection is anchored to).
 - `make verify-data` checks the canonical raw workbooks listed in [data/checksums.sha256](data/checksums.sha256) before rebuilds.
 - The processed CSV is deterministic and is validated against the current raw-source derivation on every `make validate-data`.
 - The run manifest records commit hash, dependency versions, input checksum, config checksum, and runtime parameters.
 
-## Transition Matrices
+## Time-Varying Disability Rates
 
-The model now supports optional calendar-time transition matrices so disability rates can change over time even within the same age bracket.
+The model projects how age-bracket disability rates evolve over the simulation horizon. There are two configurable mechanisms, selected by `transition_model.type` in the run YAML:
 
-This is configured in the run YAML, for example [configs/smoke.yaml](configs/smoke.yaml) and [configs/baseline.yaml](configs/baseline.yaml). Those shipped configs use:
+- **`trend`** — explicit forward projection anchored at the SDAC base year (2022). Used by [configs/baseline.yaml](configs/baseline.yaml).
+- **`matrices`** — calendar-time transition matrices (advanced / proof-of-concept). Used by [configs/smoke.yaml](configs/smoke.yaml).
+
+### Trend Projection (baseline)
+
+SDAC 2022 provides the baseline disability rate per age bracket. Because the model runs ~20 years into the future, we project those rates forward under a named trend. The simulation is anchored at 2022 (`run.start_year: 2022`), so the horizon genuinely projects forward (2022 → ~2042) rather than replaying history.
+
+[configs/baseline.yaml](configs/baseline.yaml) uses:
+
+```yaml
+transition_model:
+  type: trend
+  trend: none        # hold 2022 rates flat across the horizon
+  base_year: 2022    # must equal run.start_year
+```
+
+Three trends are planned:
+
+- **`none`** (implemented) — hold each bracket's 2022 rate flat for the whole horizon. This is the lower-bound scenario.
+- **`linear`** (planned) — extrapolate the 2003→2022 SDAC trend forward linearly per bracket. Upper-bound scenario.
+- **`mid`** (planned) — exactly halfway between `none` and `linear`.
+
+Currently only `none` is wired in; selecting `linear` or `mid` raises an error until those steps land. Each scenario still expands into low/base/high margin-of-error cases, and the resolved `trend` is recorded in `scenario_summaries.csv` and the run manifest. `base_year` must equal `run.start_year` or the run fails fast.
+
+## Transition Matrices (advanced)
+
+The model also supports optional calendar-time transition matrices so disability rates can change over time even within the same age bracket. This is the `matrices` mechanism, used by [configs/smoke.yaml](configs/smoke.yaml) and available for custom configs:
 
 ```yaml
 transition_model:
@@ -248,7 +274,7 @@ scenarios:
 
 ### Practical Workflow
 
-1. Start from `identity` everywhere to verify the run still reproduces the current baseline.
+1. Start from `identity` everywhere (as in [configs/smoke.yaml](configs/smoke.yaml)) to verify the run is a no-op over calendar time. Note the shipped baseline uses the `trend` mechanism instead, not matrices.
 2. Decide which series you want to vary over time. Often `any_dis` is the cleanest first target.
 3. Estimate the calendar-time change you want within each age bracket.
 4. Translate that into a 7x7 matrix for that series. Start diagonal unless you have a strong reason not to.
