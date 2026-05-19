@@ -108,26 +108,34 @@ make smoke
 
 The model projects how age-bracket disability rates evolve over the simulation horizon with explicit trend settings selected by `transition_model.type` in the run YAML.
 
-### Trend Projection (baseline)
+### Trend Projection
 
 SDAC 2022 provides the baseline disability rate per age bracket. Because the model runs ~20 years into the future, we project those rates forward under a named trend. The simulation is anchored at 2022 (`run.start_year: 2022`), so the horizon genuinely projects forward (2022 → ~2042) rather than replaying history.
 
-[configs/baseline.yaml](configs/baseline.yaml) uses:
+The default `transition_model` block in [configs/baseline.yaml](configs/baseline.yaml) is:
 
 ```yaml
 transition_model:
   type: trend
-  trend: none        # hold 2022 rates flat across the horizon
+  trend: none
   base_year: 2022    # must equal run.start_year
 ```
 
-Three trends are planned:
+Individual scenarios can override the trend via a `trend:` key. The baseline run includes three trend scenarios:
 
-- **`none`** (implemented) — hold each bracket's 2022 rate flat for the whole horizon. This is the lower-bound scenario.
-- **`linear`** (planned) — extrapolate the 2003→2022 SDAC trend forward linearly per bracket. Upper-bound scenario.
-- **`mid`** (planned) — exactly halfway between `none` and `linear`.
+| Trend | Description |
+|---|---|
+| `none` | Hold each bracket's 2022 rate flat for the whole horizon. |
+| `sdac_2003_2022_trend` | Project `any_dis` forward using the linear 2003–2022 annual increment derived from SDACDC01.xlsx Table 1.3 (person-level, population-weighted). `motor_phys` is inferred by scaling the same relative increment to its 2022 household-level baseline. |
+| `sdac_2015_2022_trend` | Same method as `sdac_2003_2022_trend` but uses the 2015–2022 window (7 years) instead of the full 19-year series. |
 
-Currently only `none` is wired in; selecting `linear` or `mid` raises an error until those steps land. Each scenario still expands into low/base/high margin-of-error cases, and the resolved `trend` is recorded in `scenario_summaries.csv` and the run manifest. `base_year` must equal `run.start_year` or the run fails fast.
+For `sdac_2003_2022_trend` and `sdac_2015_2022_trend` the historical annual increment is:
+
+```
+annual_increment = (rate_end_year − rate_start_year) / n_years
+```
+
+These increments are person-level (from the SDAC time-series cube) and are used only to compute the slope; the simulation's base rates remain household-level from SDAC22. Each bracket's rate is capped at 1.0 and floored at 0.0 during projection. Each scenario still expands into low/base/high margin-of-error cases, and the resolved `trend` is recorded in `scenario_summaries.csv` and the run manifest. `base_year` must equal `run.start_year` or the run fails fast.
 
 ## Data Provenance
 
