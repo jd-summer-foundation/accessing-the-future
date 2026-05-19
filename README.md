@@ -78,6 +78,7 @@ make smoke
 ### Inputs
 - Raw source workbook: [data/raw/sdac22_household_disability.xlsx](data/raw/sdac22_household_disability.xlsx)
 - Raw housing mobility workbook: [data/raw/2. Housing mobility.xlsx](data/raw/2.%20Housing%20mobility.xlsx)
+- SDAC time-series data cube: [data/raw/SDACDC01.xlsx](data/raw/SDACDC01.xlsx) — historical disability proportions by age for 2003–2022 (Table 1.3) and population weights (Table 3.1), used to compute annual increments for the trend scenarios
 - Version-controlled derivation rules: [configs/derivation.yaml](configs/derivation.yaml)
 - Version-controlled scenario definitions: [configs/baseline.yaml](configs/baseline.yaml)
 
