@@ -22,6 +22,7 @@ from scripts.pipeline_utils import (
     DEFAULT_HOUSING_MOBILITY_WORKBOOK,
     DEFAULT_MODEL_INPUT_CSV,
     DEFAULT_RAW_WORKBOOK,
+    DEFAULT_SDACDC01_XLSX,
     GENPOP_COL,
     HIST_RATE_ANY_COL_PREFIX,
     HIST_RATE_COLUMNS,
@@ -50,6 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-excel", type=Path, default=None, help="Optional processed Excel output path.")
     parser.add_argument("--oracle", type=Path, default=None, help="Optional comparison workbook for full-frame checking.")
     parser.add_argument("--historical-csv", type=Path, default=None, help="Override path to historical any-disability CSV.")
+    parser.add_argument("--sdacdc01", type=Path, default=None, help="Override path to SDACDC01.xlsx for population weights.")
     return parser.parse_args()
 
 
@@ -134,9 +136,41 @@ _FINE_TO_MODEL_BRACKET: Dict[str, str] = {
     "90+":   "75+",
 }
 
+# Fine-grained age groups in the order they appear in SDACDC01.xlsx Table 3.1,
+# rows 43–54 (1-indexed), corresponding to historical_any_dis.csv age_group values.
+_SDACDC01_FINE_GROUPS: list[str] = [
+    "15-24", "25-34", "35-44", "45-54",
+    "55-59", "60-64", "65-69", "70-74",
+    "75-79", "80-84", "85-89", "90+",
+]
+_SDACDC01_POP_ROW_START = 42  # 0-indexed; Excel rows 43–54
+_SDACDC01_POP_COL = 11        # 0-indexed column L
+
+
+def _load_sdacdc01_population_weights(xlsx_path: Path) -> Dict[str, float]:
+    """
+    Read population counts from SDACDC01.xlsx, Table 3.1 Estimates.
+
+    Returns a mapping from fine-grained age group (matching historical_any_dis.csv
+    age_group values) to population count (thousands). Used to compute
+    population-weighted averages when combining fine groups into model brackets.
+    """
+    table = pd.read_excel(xlsx_path, sheet_name="Table 3.1 Estimates", header=None)
+    pop_values = table.iloc[
+        _SDACDC01_POP_ROW_START : _SDACDC01_POP_ROW_START + len(_SDACDC01_FINE_GROUPS),
+        _SDACDC01_POP_COL,
+    ]
+    weights: Dict[str, float] = {}
+    for group, raw in zip(_SDACDC01_FINE_GROUPS, pop_values):
+        weights[group] = float(raw)
+    if any(w <= 0 for w in weights.values()):
+        raise ValueError("SDACDC01.xlsx Table 3.1: non-positive population weight encountered")
+    return weights
+
 
 def load_historical_any_dis(
     csv_path: Path | None = None,
+    population_weights: Dict[str, float] | None = None,
 ) -> Dict[int, Dict[str, float]]:
     """
     Read historical 'any disability' rates and aggregate to model age brackets.
@@ -144,10 +178,14 @@ def load_historical_any_dis(
     Input CSV has columns: age_group, 2003, 2009, 2012, 2015, 2018, 2022
     Rates are in percent (0-100). Returns fractions (0-1).
 
-    Finer brackets are averaged to model brackets:
+    Finer brackets are combined to model brackets:
       55-59 + 60-64  →  55-64
       65-69 + 70-74  →  65-74
       75-79 + 80-84 + 85-89 + 90+  →  75+
+
+    When population_weights is provided (a dict mapping fine group → population),
+    uses a population-weighted average: sum(rate_i * pop_i) / sum(pop_i).
+    Otherwise falls back to a simple (unweighted) average.
     """
     path = csv_path or DEFAULT_HISTORICAL_ANY_DIS_CSV
     df = pd.read_csv(path, dtype=str)
@@ -161,22 +199,23 @@ def load_historical_any_dis(
         if col not in df.columns:
             raise ValueError(f"historical_any_dis.csv missing column '{col}'")
 
-        sums: Dict[str, float] = {b: 0.0 for b in BRACKETS}
-        counts: Dict[str, int] = {b: 0 for b in BRACKETS}
+        weighted_sums: Dict[str, float] = {b: 0.0 for b in BRACKETS}
+        weight_totals: Dict[str, float] = {b: 0.0 for b in BRACKETS}
         for _, row in df.iterrows():
             fine = str(row["age_group"]).strip()
             model_bracket = _FINE_TO_MODEL_BRACKET.get(fine)
             if model_bracket is None:
                 continue
             val = float(str(row[col]).strip())
-            sums[model_bracket] += val
-            counts[model_bracket] += 1
+            w = float(population_weights[fine]) if population_weights is not None else 1.0
+            weighted_sums[model_bracket] += val * w
+            weight_totals[model_bracket] += w
 
-        missing = [b for b in BRACKETS if counts[b] == 0]
+        missing = [b for b in BRACKETS if weight_totals[b] == 0.0]
         if missing:
             raise ValueError(f"historical_any_dis.csv: no rows map to model brackets {missing} for year {year}")
 
-        result[year] = {b: (sums[b] / counts[b]) / 100.0 for b in BRACKETS}
+        result[year] = {b: (weighted_sums[b] / weight_totals[b]) / 100.0 for b in BRACKETS}
 
     return result
 
@@ -187,6 +226,7 @@ def build_model_inputs(
     raw_workbook: Path | None = None,
     mobility_workbook: Path | None = None,
     historical_csv: Path | None = None,
+    sdacdc01_workbook: Path | None = None,
 ) -> pd.DataFrame:
     config = load_yaml(config_path)
     workbook = raw_workbook or _resolve_configured_path(config, "raw_workbook", DEFAULT_RAW_WORKBOOK)
@@ -231,7 +271,9 @@ def build_model_inputs(
     df[GENPOP_COL] = df[GENPOP_COL].astype(int)
     df = validate_model_inputs(df)
 
-    hist_rates = load_historical_any_dis(historical_csv)
+    sdacdc01_path = sdacdc01_workbook or DEFAULT_SDACDC01_XLSX
+    population_weights = _load_sdacdc01_population_weights(sdacdc01_path) if sdacdc01_path.exists() else None
+    hist_rates = load_historical_any_dis(historical_csv, population_weights=population_weights)
     for year in HIST_SURVEY_YEARS:
         col = f"{HIST_RATE_ANY_COL_PREFIX}{year}"
         from au_housing_disability_monte_carlo import BRACKETS
@@ -248,6 +290,7 @@ def main() -> None:
         raw_workbook=args.raw_workbook,
         mobility_workbook=args.mobility_workbook,
         historical_csv=args.historical_csv,
+        sdacdc01_workbook=args.sdacdc01,
     )
 
     output_csv = args.output_csv or ROOT / config.get("processed_csv", str(DEFAULT_MODEL_INPUT_CSV.relative_to(ROOT)))
