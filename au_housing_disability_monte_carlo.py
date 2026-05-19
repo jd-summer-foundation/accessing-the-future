@@ -36,7 +36,9 @@ BRACKET_IDX = {b: i for i, b in enumerate(BRACKETS)}
 # "sdac_2003_2022_trend": project both any_dis and motor_phys forward using the
 #   linear 2003–2022 trend from SDACDC01.xlsx Table 1.3 (any disability), with
 #   motor_phys using an inferred increment scaled to its 2022 baseline.
-TREND_TYPES: Tuple[str, ...] = ("none", "sdac_2003_2022_trend")
+# "sdac_2015_2022_trend": same method as above but uses 2015–2022 (7 years)
+#   as the historical window instead of 2003–2022 (19 years).
+TREND_TYPES: Tuple[str, ...] = ("none", "sdac_2003_2022_trend", "sdac_2015_2022_trend")
 
 DEFAULT_HORIZON_YEARS = 20
 
@@ -262,9 +264,10 @@ def build_trend_schedule(
             from SDACDC01.xlsx Table 1.3. Used as t=0 for the trend scenarios.
         trend: One of TREND_TYPES.
         horizon_years: Simulation length in years.
-        historical_any: Dict keyed by survey year (e.g. {2003: {...}, 2022: {...}})
+        historical_any: Dict keyed by survey year (e.g. {2003: {...}, 2015: {...}, 2022: {...}})
             containing SDACDC01 any-disability rates (fractions 0–1) per bracket.
-            Required for "sdac_2003_2022_trend".
+            Required for "sdac_2003_2022_trend" (needs year 2003) and
+            "sdac_2015_2022_trend" (needs year 2015).
     """
     _validate_bracketed_dict("any_2022", any_2022)
     any_values = np.asarray([float(any_2022[b]) for b in BRACKETS], dtype=float)
@@ -285,6 +288,62 @@ def build_trend_schedule(
         for offset in range(int(horizon_years) + 1):
             rates_at_t = _scale_all_rates(rates_2022, scales)
             snapshots.append(TransitionSnapshot(float(offset), rates_at_t, make_profiles(rates_at_t)))
+        return snapshots
+
+    if trend == "sdac_2015_2022_trend":
+        if historical_any is None or 2015 not in historical_any:
+            raise ValueError(
+                "historical_any must be provided and include year 2015 "
+                "for the 'sdac_2015_2022_trend' trend"
+            )
+
+        any_2015 = historical_any[2015]
+        _validate_bracketed_dict("historical_any[2015]", any_2015)
+
+        # Annual percentage-point increment for any_dis (fractions, not percentages).
+        # Negative when the 2015–2022 trend is declining for a bracket.
+        inc_any: Dict[str, float] = {
+            b: (float(any_2022[b]) - float(any_2015[b])) / 7
+            for b in BRACKETS
+        }
+
+        # motor_phys starts from the scenario-scaled sdac22 rates.
+        # Inferred annual increment: same relative trend as any_dis, scaled to the
+        # motor_phys 2022 baseline.
+        motor_2022_base = rates_2022.motor_phys.by_bracket
+        inc_motor: Dict[str, float] = {}
+        for b in BRACKETS:
+            if float(any_2022[b]) > 0.0:
+                relative_annual_trend = float(inc_any[b]) / float(any_2022[b])
+                inc_motor[b] = float(motor_2022_base[b]) * relative_annual_trend
+            else:
+                inc_motor[b] = 0.0
+
+        print("Annual increments for 'sdac_2015_2022_trend':")
+        for b in BRACKETS:
+            print(
+                f"  [{b}]  any: 2015={float(any_2015[b])*100:.3f}%  "
+                f"2022={float(any_2022[b])*100:.3f}%  "
+                f"inc={inc_any[b]*100:+.4f}%/yr  |  "
+                f"motor/phys: 2022={float(motor_2022_base[b])*100:.3f}%  "
+                f"inc={inc_motor[b]*100:+.4f}%/yr"
+            )
+
+        for offset in range(int(horizon_years) + 1):
+            any_at_t = {
+                b: float(np.clip(float(any_2022[b]) + inc_any[b] * offset, 0.0, 1.0))
+                for b in BRACKETS
+            }
+            motor_at_t = {
+                b: float(np.clip(
+                    min(float(motor_2022_base[b]) + inc_motor[b] * offset, any_at_t[b]),
+                    0.0, 1.0,
+                ))
+                for b in BRACKETS
+            }
+            rates_at_t = AllRates(any_dis=Rates(any_at_t), motor_phys=Rates(motor_at_t))
+            snapshots.append(TransitionSnapshot(float(offset), rates_at_t, make_profiles(rates_at_t)))
+
         return snapshots
 
     # trend == "sdac_2003_2022_trend"

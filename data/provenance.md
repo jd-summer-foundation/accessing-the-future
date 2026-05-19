@@ -34,7 +34,10 @@ combined_rate = sum(rate_i * population_i) / sum(population_i)
 
 Population counts for weighting come from `Table 3.1 Estimates`, column L (total persons), rows 43–54 (the same 12 fine-grained age groups, in order). Weights are the same for all survey years.
 
-These rates are **person-level** disability prevalence and are used only to compute the `sdac_2003_2022_trend` annual increment — they are **not** the simulation's base rates (which are household-level, from SDAC22).
+These rates are **person-level** disability prevalence and are used to compute the annual increments for two historical-trend scenarios — they are **not** the simulation's base rates (which are household-level, from SDAC22):
+
+- **`sdac_2003_2022_trend`**: uses survey years 2003 and 2022; annual increment = (2022 rate − 2003 rate) / 19.
+- **`sdac_2015_2022_trend`**: uses survey years 2015 and 2022; annual increment = (2022 rate − 2015 rate) / 7. Uses the same population-weighted age-bracket aggregation and the same relative-scaling method for `motor_phys` as the 2003–2022 scenario, but over the shorter seven-year window.
 
 ## Validation
 

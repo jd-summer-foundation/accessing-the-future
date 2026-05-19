@@ -38,3 +38,8 @@ scenarios:
     disabled_tenure_factor: 1.0
     rate_scale: 1.0
     trend: sdac_2003_2022_trend
+  - name: sdac_2015_2022_trend
+    first_draw_source: inmover
+    disabled_tenure_factor: 1.0
+    rate_scale: 1.0
+    trend: sdac_2015_2022_trend
