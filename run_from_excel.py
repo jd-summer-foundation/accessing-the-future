@@ -21,6 +21,7 @@ from scripts.pipeline_utils import (
     DEFAULT_BASELINE_CONFIG,
     GENPOP_COL,
     HIST_RATE_ANY_COL_PREFIX,
+    HIST_SURVEY_YEARS,
     INMOVER_COL,
     RATE_COLUMNS,
     RATE_MOE_SUFFIX,
@@ -406,7 +407,8 @@ def main() -> None:
                 f"run.start_year ({int(runtime['start_year'])})"
             )
         trend = str(scenario.get("trend", scenario_transition_config.get("trend", "none")))
-        any_base = _extract_survey_rates_any(df_raw, [base_year])[base_year]
+        historical_any = _extract_survey_rates_any(df_raw, HIST_SURVEY_YEARS)
+        any_base = historical_any[base_year]
 
         params = eng.SimParams(
             n_props=int(runtime["n_props"]),
@@ -429,6 +431,7 @@ def main() -> None:
                 any_base,
                 trend,
                 horizon_years=int(runtime["horizon_years"]),
+                historical_any=historical_any,
             )
 
             print(f"\n=== Running scenario: {_scenario_title(output_scenario_name)} ===")

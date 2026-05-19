@@ -64,3 +64,109 @@ def test_base_year_any_rates_are_validated() -> None:
     with pytest.raises(ValueError, match="fractions between 0 and 1"):
         eng.build_trend_schedule(_make_rates(), invalid, "none", horizon_years=5)
 
+
+# ---------------------------------------------------------------------------
+# sdac_2003_2022_trend
+# ---------------------------------------------------------------------------
+
+def _make_historical_any(rate_2003: float, rate_2022: float) -> dict[int, dict[str, float]]:
+    return {
+        2003: _uniform_rates(rate_2003),
+        2022: _uniform_rates(rate_2022),
+    }
+
+
+def test_sdac_trend_any_applies_linear_increment() -> None:
+    """t=0 equals any_2022; t=1 equals any_2022 + (any_2022 - any_2003) / 19."""
+    rates = _make_rates(any_val=0.20, motor_val=0.08)
+    hist = _make_historical_any(rate_2003=0.10, rate_2022=0.20)
+    schedule = eng.build_trend_schedule(
+        rates, _uniform_rates(0.20), "sdac_2003_2022_trend",
+        horizon_years=5, historical_any=hist,
+    )
+    expected_increment = (0.20 - 0.10) / 19
+    for b in BRACKETS:
+        assert schedule[0].rates.any_dis.by_bracket[b] == pytest.approx(0.20)
+        assert schedule[1].rates.any_dis.by_bracket[b] == pytest.approx(0.20 + expected_increment)
+        assert schedule[5].rates.any_dis.by_bracket[b] == pytest.approx(0.20 + 5 * expected_increment)
+
+
+def test_sdac_trend_motor_increments_proportionally() -> None:
+    """motor_phys at t=1 equals motor_2022 + (motor_2022 * relative_annual_trend)."""
+    any_2022 = 0.20
+    any_2003 = 0.10
+    motor_2022 = 0.08
+    rates = _make_rates(any_val=any_2022, motor_val=motor_2022)
+    hist = _make_historical_any(rate_2003=any_2003, rate_2022=any_2022)
+    schedule = eng.build_trend_schedule(
+        rates, _uniform_rates(any_2022), "sdac_2003_2022_trend",
+        horizon_years=5, historical_any=hist,
+    )
+    annual_increment_any = (any_2022 - any_2003) / 19
+    relative = annual_increment_any / any_2022
+    expected_motor_t1 = motor_2022 + motor_2022 * relative
+    for b in BRACKETS:
+        assert schedule[0].rates.motor_phys.by_bracket[b] == pytest.approx(motor_2022)
+        assert schedule[1].rates.motor_phys.by_bracket[b] == pytest.approx(expected_motor_t1)
+
+
+def test_sdac_trend_capped_at_unity() -> None:
+    """Rates are clipped at 1.0 when the trend is strongly positive over many years."""
+    rates = _make_rates(any_val=0.90, motor_val=0.50)
+    hist = _make_historical_any(rate_2003=0.01, rate_2022=0.90)
+    schedule = eng.build_trend_schedule(
+        rates, _uniform_rates(0.90), "sdac_2003_2022_trend",
+        horizon_years=100, historical_any=hist,
+    )
+    for snap in schedule:
+        for b in BRACKETS:
+            assert snap.rates.any_dis.by_bracket[b] <= 1.0 + 1e-9
+            assert snap.rates.motor_phys.by_bracket[b] <= 1.0 + 1e-9
+
+
+def test_sdac_trend_clipped_at_zero_for_negative_increments() -> None:
+    """When any_2003 > any_2022 the annual increment is negative; rates must not go below 0.
+    This is a real-world case — several age brackets show declining trends 2003–2022."""
+    rates = _make_rates(any_val=0.05, motor_val=0.02)
+    # 2003 rate higher → negative increment
+    hist = _make_historical_any(rate_2003=0.30, rate_2022=0.05)
+    schedule = eng.build_trend_schedule(
+        rates, _uniform_rates(0.05), "sdac_2003_2022_trend",
+        horizon_years=50, historical_any=hist,
+    )
+    for snap in schedule:
+        for b in BRACKETS:
+            assert snap.rates.any_dis.by_bracket[b] >= 0.0 - 1e-9
+            assert snap.rates.motor_phys.by_bracket[b] >= 0.0 - 1e-9
+
+
+def test_sdac_trend_motor_never_exceeds_any_dis() -> None:
+    """motor_phys is capped at any_dis at every time step, including when any_dis is declining."""
+    rates = _make_rates(any_val=0.20, motor_val=0.15)
+    # any_dis declines; motor_phys starts just below any_dis
+    hist = _make_historical_any(rate_2003=0.40, rate_2022=0.20)
+    schedule = eng.build_trend_schedule(
+        rates, _uniform_rates(0.20), "sdac_2003_2022_trend",
+        horizon_years=20, historical_any=hist,
+    )
+    for snap in schedule:
+        for b in BRACKETS:
+            assert snap.rates.motor_phys.by_bracket[b] <= snap.rates.any_dis.by_bracket[b] + 1e-9
+
+
+def test_sdac_trend_requires_historical_any() -> None:
+    with pytest.raises(ValueError, match="historical_any"):
+        eng.build_trend_schedule(
+            _make_rates(), _uniform_rates(0.20), "sdac_2003_2022_trend",
+            horizon_years=5,
+        )
+
+
+def test_sdac_trend_requires_year_2003() -> None:
+    with pytest.raises(ValueError, match="2003"):
+        eng.build_trend_schedule(
+            _make_rates(), _uniform_rates(0.20), "sdac_2003_2022_trend",
+            horizon_years=5,
+            historical_any={2022: _uniform_rates(0.20)},
+        )
+
