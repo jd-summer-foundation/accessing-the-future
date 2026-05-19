@@ -13,7 +13,7 @@ input:
 
 transition_model:
   type: trend
-  trend: none        # only 'none' implemented in this step
+  trend: none
   base_year: 2022    # must equal run.start_year
 
 scenarios:
