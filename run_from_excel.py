@@ -130,7 +130,7 @@ def _build_runtime(args: argparse.Namespace) -> Dict[str, object]:
         "sheet": args.sheet if args.sheet is not None else input_cfg.get("sheet", 0),
         "output_dir": output_dir,
         "run_name": run_cfg.get("name", output_dir.name),
-        "n_props": args.n_props if args.n_props is not None else int(run_cfg.get("n_props", 44_346)),
+        "n_props": args.n_props if args.n_props is not None else int(run_cfg.get("n_props", 50_000)),
         "seed": args.seed if args.seed is not None else int(run_cfg.get("seed", 123)),
         "horizon_years": args.horizon_years
         if args.horizon_years is not None

@@ -86,7 +86,7 @@ class InMoverDist:
 
 @dataclass(frozen=True)
 class SimParams:
-    n_props: int = 44_346
+    n_props: int = 50_000
     horizon_years: int = DEFAULT_HORIZON_YEARS
     seed: int = 42
 

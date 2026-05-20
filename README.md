@@ -100,7 +100,7 @@ make smoke
 
 ## Reproducibility Notes
 
-- Fixed defaults for the baseline run live in [configs/baseline.yaml](configs/baseline.yaml): `seed=123`, `n_props=44346`, `horizon_years=20`, `start_year=2022` (the SDAC base year the trend projection is anchored to).
+- Fixed defaults for the baseline run live in [configs/baseline.yaml](configs/baseline.yaml): `seed=123`, `n_props=50000`, `horizon_years=20`, `start_year=2022` (the SDAC base year the trend projection is anchored to).
 - `make verify-data` checks the canonical raw workbooks listed in [data/checksums.sha256](data/checksums.sha256) before rebuilds.
 - The processed CSV is deterministic and is validated against the current raw-source derivation on every `make validate-data`.
 - The run manifest records commit hash, dependency versions, input checksum, config checksum, and runtime parameters.

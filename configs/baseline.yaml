@@ -3,7 +3,7 @@ run:
   input_path: data/processed/model_inputs.csv
   output_dir: results/baseline
   seed: 123
-  n_props: 44346
+  n_props: 50000
   horizon_years: 20
   return_time_stats: true
   start_year: 2022
