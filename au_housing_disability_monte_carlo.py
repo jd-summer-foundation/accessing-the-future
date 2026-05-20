@@ -260,8 +260,10 @@ def build_trend_schedule(
 
     Args:
         rates_2022: Model rates for the base year (with scenario scaling applied).
-        any_2022: Base-year any-disability rate per bracket (fractions 0–1),
-            from SDACDC01.xlsx Table 1.3. Used as t=0 for the trend scenarios.
+        any_2022: Person-level any-disability rate per bracket (fractions 0–1),
+            from SDACDC01.xlsx Table 1.3. Used as the denominator for computing
+            relative annual changes; NOT used as the simulation starting point
+            (which is always the household-level rates_2022).
         trend: One of TREND_TYPES.
         horizon_years: Simulation length in years.
         historical_any: Dict keyed by survey year (e.g. {2003: {...}, 2015: {...}, 2022: {...}})
@@ -307,31 +309,35 @@ def build_trend_schedule(
             for b in BRACKETS
         }
 
-        # motor_phys starts from the scenario-scaled sdac22 rates.
-        # Inferred annual increment: same relative trend as any_dis, scaled to the
-        # motor_phys 2022 baseline.
+        # Both any_dis and motor_phys start from the scenario-scaled household-level
+        # rates_2022 and apply increments scaled via the person-level relative change.
+        any_2022_hh = rates_2022.any_dis.by_bracket
         motor_2022_base = rates_2022.motor_phys.by_bracket
+        inc_any_hh: Dict[str, float] = {}
         inc_motor: Dict[str, float] = {}
         for b in BRACKETS:
             if float(any_2022[b]) > 0.0:
                 relative_annual_trend = float(inc_any[b]) / float(any_2022[b])
+                inc_any_hh[b] = float(any_2022_hh[b]) * relative_annual_trend
                 inc_motor[b] = float(motor_2022_base[b]) * relative_annual_trend
             else:
+                inc_any_hh[b] = 0.0
                 inc_motor[b] = 0.0
 
         print("Annual increments for 'sdac_2015_2022_trend':")
         for b in BRACKETS:
             print(
                 f"  [{b}]  any: 2015={float(any_2015[b])*100:.3f}%  "
-                f"2022={float(any_2022[b])*100:.3f}%  "
-                f"inc={inc_any[b]*100:+.4f}%/yr  |  "
+                f"2022(person)={float(any_2022[b])*100:.3f}%  "
+                f"2022(hh)={float(any_2022_hh[b])*100:.3f}%  "
+                f"inc={inc_any_hh[b]*100:+.4f}%/yr  |  "
                 f"motor/phys: 2022={float(motor_2022_base[b])*100:.3f}%  "
                 f"inc={inc_motor[b]*100:+.4f}%/yr"
             )
 
         for offset in range(int(horizon_years) + 1):
             any_at_t = {
-                b: float(np.clip(float(any_2022[b]) + inc_any[b] * offset, 0.0, 1.0))
+                b: float(np.clip(float(any_2022_hh[b]) + inc_any_hh[b] * offset, 0.0, 1.0))
                 for b in BRACKETS
             }
             motor_at_t = {
@@ -363,32 +369,35 @@ def build_trend_schedule(
         for b in BRACKETS
     }
 
-    # motor_phys starts from the scenario-scaled sdac22 rates.
-    # Inferred annual increment: same relative trend as any_dis, scaled to the
-    # motor_phys 2022 baseline. Preserves the proportional relationship between
-    # the any-disability trend and the physical-disability starting level.
+    # Both any_dis and motor_phys start from the scenario-scaled household-level
+    # rates_2022 and apply increments scaled via the person-level relative change.
+    any_2022_hh = rates_2022.any_dis.by_bracket
     motor_2022 = rates_2022.motor_phys.by_bracket
+    annual_increment_any_hh: Dict[str, float] = {}
     annual_increment_motor: Dict[str, float] = {}
     for b in BRACKETS:
         if float(any_2022[b]) > 0.0:
             relative_annual_trend = float(annual_increment_any[b]) / float(any_2022[b])
+            annual_increment_any_hh[b] = float(any_2022_hh[b]) * relative_annual_trend
             annual_increment_motor[b] = float(motor_2022[b]) * relative_annual_trend
         else:
+            annual_increment_any_hh[b] = 0.0
             annual_increment_motor[b] = 0.0
 
     print("Annual increments for 'sdac_2003_2022_trend':")
     for b in BRACKETS:
         print(
             f"  [{b}]  any: 2003={float(any_2003[b])*100:.3f}%  "
-            f"2022={float(any_2022[b])*100:.3f}%  "
-            f"inc={annual_increment_any[b]*100:+.4f}%/yr  |  "
+            f"2022(person)={float(any_2022[b])*100:.3f}%  "
+            f"2022(hh)={float(any_2022_hh[b])*100:.3f}%  "
+            f"inc={annual_increment_any_hh[b]*100:+.4f}%/yr  |  "
             f"motor/phys: 2022={float(motor_2022[b])*100:.3f}%  "
             f"inc={annual_increment_motor[b]*100:+.4f}%/yr"
         )
 
     for offset in range(int(horizon_years) + 1):
         any_at_t = {
-            b: float(np.clip(float(any_2022[b]) + annual_increment_any[b] * offset, 0.0, 1.0))
+            b: float(np.clip(float(any_2022_hh[b]) + annual_increment_any_hh[b] * offset, 0.0, 1.0))
             for b in BRACKETS
         }
         motor_at_t = {
