@@ -52,8 +52,6 @@ HIST_RATE_ANY_COL_PREFIX = "DIP_any_hist_"
 HIST_SURVEY_YEARS = [2003, 2009, 2012, 2015, 2018, 2022]
 HIST_RATE_COLUMNS = [f"{HIST_RATE_ANY_COL_PREFIX}{year}" for year in HIST_SURVEY_YEARS]
 
-DEFAULT_HISTORICAL_ANY_DIS_CSV = REPO_ROOT / "data/raw/historical_any_dis.csv"
-
 DEFAULT_RAW_WORKBOOK = REPO_ROOT / "data/raw/sdac22_household_disability.xlsx"
 DEFAULT_HOUSING_MOBILITY_WORKBOOK = REPO_ROOT / "data/raw/2. Housing mobility.xlsx"
 DEFAULT_SDACDC01_XLSX = REPO_ROOT / "data/raw/SDACDC01.xlsx"
