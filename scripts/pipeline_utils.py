@@ -22,7 +22,6 @@ AGE_COL = "Age of Reference Person (Years)"
 RATE_ANY_COL = "DIP_any"
 RATE_MOTOR_COL = "DIP_physical"
 RATE_MOE_SUFFIX = "_moe"
-GENPOP_COL = "Age distribution"
 INMOVER_COL = "Of those who have length of tenure <1 year, what proportion are in each age bucket?"
 
 TENURE_BUCKETS = ["<1", "1-2", "2-3", "3-4", "5-9", "10-19", "20+"]
@@ -40,7 +39,6 @@ MODEL_INPUT_COLUMNS = [
     AGE_COL,
     RATE_ANY_COL,
     RATE_MOTOR_COL,
-    GENPOP_COL,
     *TENURE_COLUMNS,
     INMOVER_COL,
 ]
@@ -127,10 +125,6 @@ def validate_model_inputs(df: pd.DataFrame) -> pd.DataFrame:
             raise ValueError(f"{column} contains negative values")
         if (numeric > 100).any():
             raise ValueError(f"{column} contains values above 100")
-
-    gen_dist = pd.to_numeric(out[GENPOP_COL], errors="coerce")
-    if gen_dist.isna().any() or (gen_dist <= 0).any():
-        raise ValueError(f"{GENPOP_COL} must contain positive numeric values")
 
     for _, row in out.iterrows():
         _validate_probability_series(

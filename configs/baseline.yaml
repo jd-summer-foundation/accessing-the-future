@@ -18,28 +18,19 @@ transition_model:
 
 scenarios:
   - name: main_inmover_first
-    first_draw_source: inmover
-    disabled_tenure_factor: 1.0
-    rate_scale: 1.0
-  - name: sens_general_first
-    first_draw_source: general
     disabled_tenure_factor: 1.0
     rate_scale: 1.0
   - name: sens_disabled_tenure_1p2
-    first_draw_source: inmover
     disabled_tenure_factor: 1.2
     rate_scale: 1.0
   - name: selection_scale_0p9
-    first_draw_source: inmover
     disabled_tenure_factor: 1.0
     rate_scale: 0.9
   - name: sdac_2003_2022_trend
-    first_draw_source: inmover
     disabled_tenure_factor: 1.0
     rate_scale: 1.0
     trend: sdac_2003_2022_trend
   - name: sdac_2015_2022_trend
-    first_draw_source: inmover
     disabled_tenure_factor: 1.0
     rate_scale: 1.0
     trend: sdac_2015_2022_trend

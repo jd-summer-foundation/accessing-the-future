@@ -24,10 +24,6 @@ column_mappings:
   DIP_physical:
     sheet: proportions
     column_index: 4
-  "Age distribution":
-    sheet: estimates
-    column_index: 7
-    rounding: nearest_int
 
 housing_mobility_table:
   tenure_sheet: Table 2.2

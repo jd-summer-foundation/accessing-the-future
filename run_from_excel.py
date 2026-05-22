@@ -19,7 +19,6 @@ import au_housing_disability_monte_carlo as eng
 from scripts.pipeline_utils import (
     AGE_COL,
     DEFAULT_BASELINE_CONFIG,
-    GENPOP_COL,
     HIST_RATE_ANY_COL_PREFIX,
     HIST_SURVEY_YEARS,
     INMOVER_COL,
@@ -103,10 +102,9 @@ def _resolve_path(value: str | None) -> Path | None:
 
 def _default_scenarios() -> List[Dict[str, object]]:
     return [
-        {"name": "main_inmover_first", "first_draw_source": "inmover", "disabled_tenure_factor": 1.0, "rate_scale": 1.0},
-        {"name": "sens_general_first", "first_draw_source": "general", "disabled_tenure_factor": 1.0, "rate_scale": 1.0},
-        {"name": "sens_disabled_tenure_1p2", "first_draw_source": "inmover", "disabled_tenure_factor": 1.2, "rate_scale": 1.0},
-        {"name": "selection_scale_0p9", "first_draw_source": "inmover", "disabled_tenure_factor": 1.0, "rate_scale": 0.9},
+        {"name": "main_inmover_first", "disabled_tenure_factor": 1.0, "rate_scale": 1.0},
+        {"name": "sens_disabled_tenure_1p2", "disabled_tenure_factor": 1.2, "rate_scale": 1.0},
+        {"name": "selection_scale_0p9", "disabled_tenure_factor": 1.0, "rate_scale": 0.9},
     ]
 
 
@@ -151,13 +149,6 @@ def prepare_simulation_inputs(df: pd.DataFrame) -> Dict[str, object]:
     inmover_raw = {bracket: float(valid_rows.loc[valid_rows[AGE_COL] == bracket, INMOVER_COL].iloc[0]) for bracket in eng.BRACKETS}
     inmover_probs = _normalise_dist(inmover_raw, "inmover_probs")
     inmovers = eng.InMoverDist(inmover_probs)
-
-    gen_raw: Dict[str, float] = {}
-    for bracket in eng.BRACKETS:
-        row = valid_rows.loc[valid_rows[AGE_COL] == bracket]
-        value = pd.to_numeric(row.iloc[0][GENPOP_COL], errors="coerce") if not row.empty else float("nan")
-        gen_raw[bracket] = 0.0 if pd.isna(value) else float(value)
-    gen_probs = _normalise_dist(gen_raw, "general_pop_probs")
 
     probs_by_bracket: Dict[str, List[float]] = {}
     for bracket in eng.BRACKETS:
@@ -208,7 +199,6 @@ def prepare_simulation_inputs(df: pd.DataFrame) -> Dict[str, object]:
             "any_rate_input": [rates_any[bracket] for bracket in eng.BRACKETS],
             "motor_phys_rate_input": [rates_motor[bracket] for bracket in eng.BRACKETS],
             "inmover_dist": [inmover_probs[bracket] for bracket in eng.BRACKETS],
-            "general_pop_dist": [gen_probs[bracket] for bracket in eng.BRACKETS],
         }
     )
     for column_name, moe_map in rate_moe_maps.items():
@@ -231,7 +221,6 @@ def prepare_simulation_inputs(df: pd.DataFrame) -> Dict[str, object]:
         "rate_moe_maps": rate_moe_maps,
         "tenure": tenure,
         "inmovers": inmovers,
-        "general_pop_probs": gen_probs,
         "inputs_df": inputs_df,
         "profiles_df": profiles_df,
     }
@@ -413,7 +402,6 @@ def main() -> None:
         params = eng.SimParams(
             n_props=int(runtime["n_props"]),
             seed=int(runtime["seed"]),
-            first_draw_source=str(scenario.get("first_draw_source", "inmover")),
             horizon_years=int(runtime["horizon_years"]),
             disabled_tenure_factor=float(scenario.get("disabled_tenure_factor", 1.0)),
         )
@@ -440,7 +428,6 @@ def main() -> None:
                 scenario_rates,
                 prepared["tenure"],
                 prepared["inmovers"],
-                general_pop_probs=prepared["general_pop_probs"] if params.first_draw_source == "general" else None,
                 return_time_stats=bool(runtime["return_time_stats"]),
                 prebuilt_schedule=prebuilt,
             )
@@ -456,7 +443,6 @@ def main() -> None:
                     "base_scenario": scenario_name,
                     "uncertainty_case": uncertainty_case,
                     "trend": trend,
-                    "first_draw_source": params.first_draw_source,
                     "disabled_tenure_factor": params.disabled_tenure_factor,
                     "rate_scale": float(scenario.get("rate_scale", 1.0)),
                     "rate_scales": scenario.get("rate_scales", {}),

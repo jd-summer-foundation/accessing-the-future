@@ -25,7 +25,6 @@ from scripts.pipeline_utils import (
     DEFAULT_MODEL_INPUT_CSV,
     DEFAULT_RAW_WORKBOOK,
     DEFAULT_SDACDC01_XLSX,
-    GENPOP_COL,
     HIST_RATE_ANY_COL_PREFIX,
     HIST_RATE_COLUMNS,
     HIST_SURVEY_YEARS,
@@ -257,7 +256,6 @@ def build_model_inputs(
     df = pd.DataFrame(rows, columns=[*MODEL_INPUT_COLUMNS, *optional_moe_columns])
     for column in [*RATE_COLUMNS, *optional_moe_columns]:
         df[column] = df[column].astype(float)
-    df[GENPOP_COL] = df[GENPOP_COL].astype(int)
     df = validate_model_inputs(df)
 
     sdacdc01_path = sdacdc01_workbook or DEFAULT_SDACDC01_XLSX

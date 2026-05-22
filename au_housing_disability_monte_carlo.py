@@ -90,11 +90,6 @@ class SimParams:
     horizon_years: int = DEFAULT_HORIZON_YEARS
     seed: int = 42
 
-    # For the VERY FIRST household in each dwelling:
-    #   "inmover" -> draw age from in-mover distribution (default)
-    #   "general" -> draw age from general population distribution (supplied separately)
-    first_draw_source: str = "inmover"
-
     # If household currently has ANY/PHYSICAL, lengthen tenure by this factor (e.g. 1.2)
     disabled_tenure_factor: float = 1.0
 
@@ -545,7 +540,6 @@ def run_sim(
     rates: AllRates,
     tenure: TenureDist,
     inmovers: InMoverDist,
-    general_pop_probs: Optional[Dict[str, float]] = None,
     return_time_stats: bool = False,
     prebuilt_schedule: Optional[List[TransitionSnapshot]] = None,
 ) -> Dict[str, float]:
@@ -559,13 +553,6 @@ def run_sim(
 
     # Validate inputs
     _validate_bracketed_dict("inmovers", inmovers.probs_by_bracket)
-    if params.first_draw_source not in ("inmover", "general"):
-        raise ValueError(f"first_draw_source must be 'inmover' or 'general', got: {params.first_draw_source}")
-
-    if params.first_draw_source == "general":
-        if general_pop_probs is None:
-            raise ValueError("general_pop_probs must be provided when first_draw_source='general'")
-        _validate_bracketed_dict("general_pop_probs", general_pop_probs)
 
     for b in BRACKETS:
         if b not in tenure.probs_by_bracket:
@@ -613,20 +600,10 @@ def run_sim(
     inmover_vec = [float(inmovers.probs_by_bracket[b]) for b in BRACKETS]
     inmover_cdf = _prepare_cdf("inmover", inmover_vec)
 
-    if general_pop_probs is not None:
-        general_vec = [float(general_pop_probs[b]) for b in BRACKETS]
-        general_cdf = _prepare_cdf("general_pop", general_vec)
-    else:
-        general_cdf = None
-
     tenure_cdfs = {b: _prepare_cdf(f"tenure_{b}", tenure.probs_by_bracket[b]) for b in BRACKETS}
 
     def pick_first_bracket() -> str:
-        if params.first_draw_source == "general":
-            idx = _sample_from_cdf(general_cdf, rng)  # type: ignore[arg-type]
-        else:
-            idx = _sample_from_cdf(inmover_cdf, rng)
-        return BRACKETS[idx]
+        return BRACKETS[_sample_from_cdf(inmover_cdf, rng)]
 
     ever_any = np.zeros(params.n_props, dtype=bool)
     ever_phys = np.zeros(params.n_props, dtype=bool)

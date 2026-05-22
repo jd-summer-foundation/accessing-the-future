@@ -2,9 +2,6 @@ scenario,uncertainty_case,trend,p_ever_any,p_ever_physical,pct_time_any,pct_time
 main_inmover_first_low,low,none,0.665,0.58,0.33080623930310366,0.2556067845871405
 main_inmover_first_base,base,none,0.705,0.625,0.35730310638702206,0.2932698131416497
 main_inmover_first_high,high,none,0.7,0.625,0.3691063632220667,0.28450914389260934
-sens_general_first_low,low,none,0.64,0.575,0.3318937587512831,0.27959082200126517
-sens_general_first_base,base,none,0.7,0.59,0.3903276637388254,0.3011303740098329
-sens_general_first_high,high,none,0.71,0.635,0.40821231408655806,0.3248809106862234
 sens_disabled_tenure_1p2_low,low,none,0.665,0.555,0.3589274751906676,0.27628953993930117
 sens_disabled_tenure_1p2_base,base,none,0.69,0.61,0.35685621093763586,0.29188511129360806
 sens_disabled_tenure_1p2_high,high,none,0.7,0.61,0.37050244095327656,0.2737058948308948
