@@ -210,8 +210,8 @@ def prepare_simulation_inputs(df: pd.DataFrame) -> Dict[str, object]:
     profiles_df = pd.DataFrame(
         {
             "age_bracket": eng.BRACKETS,
-            "adj_any": [profiles["adj_any"][bracket] for bracket in eng.BRACKETS],
-            "cond_motor_phys_given_any": [profiles["cond_phys"][bracket] for bracket in eng.BRACKETS],
+            "adj_any": [profiles.adj_any[bracket] for bracket in eng.BRACKETS],
+            "cond_motor_phys_given_any": [profiles.cond_phys[bracket] for bracket in eng.BRACKETS],
         }
     )
 
@@ -371,10 +371,15 @@ def main() -> None:
 
     input_path = Path(runtime["input_path"])
     df = load_model_inputs(input_path, sheet=runtime["sheet"])
+    # df_raw keeps the historical DIP_any_hist_* columns that load_model_inputs drops
+    # during canonicalisation; they're needed for the trend schedules below.
     df_raw = pd.read_csv(input_path) if input_path.suffix == ".csv" else pd.read_excel(input_path, sheet_name=runtime["sheet"])
     prepared = prepare_simulation_inputs(df)
     prepared["inputs_df"].to_csv(output_dir / "inputs_used.csv", index=False)
     prepared["profiles_df"].to_csv(output_dir / "profiles_used.csv", index=False)
+
+    # Scenario-independent: extract once rather than per scenario/uncertainty case.
+    historical_any = _extract_survey_rates_any(df_raw, HIST_SURVEY_YEARS)
 
     summaries = []
     resolved_scenarios = []
@@ -396,7 +401,6 @@ def main() -> None:
                 f"run.start_year ({int(runtime['start_year'])})"
             )
         trend = str(scenario.get("trend", scenario_transition_config.get("trend", "none")))
-        historical_any = _extract_survey_rates_any(df_raw, HIST_SURVEY_YEARS)
         any_base = historical_any[base_year]
 
         params = eng.SimParams(
@@ -420,9 +424,11 @@ def main() -> None:
                 trend,
                 horizon_years=int(runtime["horizon_years"]),
                 historical_any=historical_any,
+                verbose=bool(runtime["verbose"]),
             )
 
-            print(f"\n=== Running scenario: {_scenario_title(output_scenario_name)} ===")
+            if runtime["verbose"]:
+                print(f"\n=== Running scenario: {_scenario_title(output_scenario_name)} ===")
             summary = eng.run_sim(
                 params,
                 scenario_rates,
@@ -430,6 +436,7 @@ def main() -> None:
                 prepared["inmovers"],
                 return_time_stats=bool(runtime["return_time_stats"]),
                 prebuilt_schedule=prebuilt,
+                verbose=bool(runtime["verbose"]),
             )
             summaries.append({
                 "scenario": output_scenario_name,

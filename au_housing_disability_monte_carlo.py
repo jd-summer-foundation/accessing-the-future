@@ -95,12 +95,28 @@ class SimParams:
 
 
 @dataclass(frozen=True)
+class Profiles:
+    """Adjusted prevalence profiles and acquisition probabilities for a rate set.
+
+    - adj_any[b]: monotone (non-decreasing) ANY prevalence per bracket
+    - cond_phys[b]: P(motor_phys | any_dis) per bracket
+    - acq_any[(b0, b1)]: P(acquire ANY) at the b0 -> b1 age boundary
+    - acq_cond_phys[(b0, b1)]: P(acquire subtype | already ANY) at that boundary
+    """
+
+    adj_any: Dict[str, float]
+    cond_phys: Dict[str, float]
+    acq_any: Dict[Tuple[str, str], float]
+    acq_cond_phys: Dict[Tuple[str, str], float]
+
+
+@dataclass(frozen=True)
 class TransitionSnapshot:
     """Precomputed rate/profile state for a calendar-time update boundary."""
 
     time_year: float
     rates: AllRates
-    profiles: Dict[str, object]
+    profiles: Profiles
 
 
 # -------------------------------------------------------------------
@@ -142,38 +158,39 @@ def _cumulative_max_monotone(vals: List[float]) -> List[float]:
     return out
 
 
+def _acquire_prob(prev_rate: float, next_rate: float) -> float:
+    """Persistence-model acquisition probability for a prev->next prevalence step:
+    (next - prev) / (1 - prev) when rising, else 0."""
+    prev = float(prev_rate)
+    nxt = float(next_rate)
+    if nxt <= prev or prev >= 1.0:
+        return 0.0
+    return (nxt - prev) / (1.0 - prev)
+
+
 def _acquire_probs_from_adjusted(adjusted_rates: Dict[str, float]) -> Dict[Tuple[str, str], float]:
     """
     Given an adjusted (non-decreasing) prevalence profile across age brackets,
-    compute acquisition probabilities for transitions b0 -> b1 under persistence:
-        acquire_prob = (p1 - p0) / (1 - p0)   if p1 > p0
-                     = 0                      otherwise
+    compute per-transition acquisition probabilities under persistence by applying
+    _acquire_prob to each b0 -> b1 bracket pair.
     """
     _validate_bracketed_dict("adjusted_rates", adjusted_rates)
-
-    probs: Dict[Tuple[str, str], float] = {}
-    for i in range(len(BRACKETS) - 1):
-        b0, b1 = BRACKETS[i], BRACKETS[i + 1]
-        p0, p1 = float(adjusted_rates[b0]), float(adjusted_rates[b1])
-        if p1 <= p0 or p0 >= 1.0:
-            probs[(b0, b1)] = 0.0
-        else:
-            probs[(b0, b1)] = (p1 - p0) / (1.0 - p0)
-    return probs
+    return {
+        (BRACKETS[i], BRACKETS[i + 1]): _acquire_prob(
+            adjusted_rates[BRACKETS[i]], adjusted_rates[BRACKETS[i + 1]]
+        )
+        for i in range(len(BRACKETS) - 1)
+    }
 
 
-def make_profiles(all_rates: AllRates) -> Dict[str, object]:
+def make_profiles(all_rates: AllRates) -> Profiles:
     """
     Build adjusted profiles and acquisition probabilities for:
 
       - ANY disability (base): monotone with age via cumulative max
       - motor_phys: conditional on ANY (subtype)
 
-    Returned dict includes:
-      - adj_any[b]
-      - cond_phys[b]    = P(motor_phys | any_dis)
-      - acq_any[(b,b1)]
-      - acq_cond_phys[(b,b1)]
+    See the Profiles dataclass for the returned fields.
     """
     _validate_bracketed_dict("any_dis", all_rates.any_dis.by_bracket)
     _validate_bracketed_dict("motor_phys", all_rates.motor_phys.by_bracket)
@@ -198,32 +215,19 @@ def make_profiles(all_rates: AllRates) -> Dict[str, object]:
 
     cond_phys = build_cond_subtype(all_rates.motor_phys.by_bracket)
 
-    # Acquisition probs
+    # Acquisition probs. The conditional subtype reuses the same persistence formula
+    # applied to P(subtype | any): when ANY is acquired at a boundary the subtype is
+    # seeded from cond[next]; when ANY is already present it can be acquired with
+    # probability _acquire_prob(cond[curr], cond[next]).
     acq_any = _acquire_probs_from_adjusted(adj_any)
+    acq_cond_phys = _acquire_probs_from_adjusted(cond_phys)
 
-    # For conditional profiles, build monotone *total* first then compute conditional acquisition
-    # by applying the same adjusted ANY totals. Here we just use the conditional profile + ANY transitions:
-    # - When ANY is acquired at boundary, subtype can also be "seeded" immediately by cond_*[next_br]
-    # - When ANY already present, subtype can be acquired with p = max(0, cond[next]-cond[curr])/(1-cond[curr])
-    def acq_from_cond(cond: Dict[str, float]) -> Dict[Tuple[str, str], float]:
-        probs: Dict[Tuple[str, str], float] = {}
-        for i in range(len(BRACKETS) - 1):
-            b0, b1 = BRACKETS[i], BRACKETS[i + 1]
-            c0, c1 = float(cond[b0]), float(cond[b1])
-            if c1 <= c0 or c0 >= 1.0:
-                probs[(b0, b1)] = 0.0
-            else:
-                probs[(b0, b1)] = (c1 - c0) / (1.0 - c0)
-        return probs
-
-    acq_cond_phys = acq_from_cond(cond_phys)
-
-    return {
-        "adj_any": adj_any,
-        "cond_phys": cond_phys,
-        "acq_any": acq_any,
-        "acq_cond_phys": acq_cond_phys,
-    }
+    return Profiles(
+        adj_any=adj_any,
+        cond_phys=cond_phys,
+        acq_any=acq_any,
+        acq_cond_phys=acq_cond_phys,
+    )
 
 
 def _scale_all_rates(rates_2022: AllRates, scale: Dict[str, float]) -> AllRates:
@@ -242,6 +246,90 @@ def _scale_all_rates(rates_2022: AllRates, scale: Dict[str, float]) -> AllRates:
     )
 
 
+# Linear-trend names mapped to (prior survey year, historical window length in years).
+_LINEAR_TREND_WINDOWS: Dict[str, Tuple[int, int]] = {
+    "sdac_2003_2022_trend": (2003, 19),
+    "sdac_2015_2022_trend": (2015, 7),
+}
+
+
+def _build_linear_trend_schedule(
+    rates_2022: AllRates,
+    any_2022: Dict[str, float],
+    historical_any: Optional[Dict[int, Dict[str, float]]],
+    trend: str,
+    prior_year: int,
+    window_years: int,
+    horizon_years: int,
+    *,
+    verbose: bool = False,
+) -> List[TransitionSnapshot]:
+    """Project rates forward by a linear person-level trend over a historical window.
+
+    Shared implementation for the sdac_*_trend variants, which differ only in the
+    prior survey year and window length. Both any_dis and motor_phys start from the
+    scenario-scaled household-level rates_2022 and apply per-year increments scaled
+    via the person-level relative change between prior_year and 2022.
+    """
+    if historical_any is None or prior_year not in historical_any:
+        raise ValueError(
+            f"historical_any must be provided and include year {prior_year} "
+            f"for the {trend!r} trend"
+        )
+
+    any_prior = historical_any[prior_year]
+    _validate_bracketed_dict(f"historical_any[{prior_year}]", any_prior)
+
+    # Annual percentage-point increment for any_dis (fractions, not percentages).
+    # Negative when the historical trend is declining for a bracket.
+    inc_any: Dict[str, float] = {
+        b: (float(any_2022[b]) - float(any_prior[b])) / window_years
+        for b in BRACKETS
+    }
+
+    any_2022_hh = rates_2022.any_dis.by_bracket
+    motor_2022 = rates_2022.motor_phys.by_bracket
+    inc_any_hh: Dict[str, float] = {}
+    inc_motor: Dict[str, float] = {}
+    for b in BRACKETS:
+        if float(any_2022[b]) > 0.0:
+            relative_annual_trend = float(inc_any[b]) / float(any_2022[b])
+            inc_any_hh[b] = float(any_2022_hh[b]) * relative_annual_trend
+            inc_motor[b] = float(motor_2022[b]) * relative_annual_trend
+        else:
+            inc_any_hh[b] = 0.0
+            inc_motor[b] = 0.0
+
+    if verbose:
+        print(f"Annual increments for {trend!r}:")
+        for b in BRACKETS:
+            print(
+                f"  [{b}]  any: {prior_year}={float(any_prior[b])*100:.3f}%  "
+                f"2022(person)={float(any_2022[b])*100:.3f}%  "
+                f"2022(hh)={float(any_2022_hh[b])*100:.3f}%  "
+                f"inc={inc_any_hh[b]*100:+.4f}%/yr  |  "
+                f"motor/phys: 2022={float(motor_2022[b])*100:.3f}%  "
+                f"inc={inc_motor[b]*100:+.4f}%/yr"
+            )
+
+    snapshots: List[TransitionSnapshot] = []
+    for offset in range(int(horizon_years) + 1):
+        any_at_t = {
+            b: float(np.clip(float(any_2022_hh[b]) + inc_any_hh[b] * offset, 0.0, 1.0))
+            for b in BRACKETS
+        }
+        motor_at_t = {
+            b: float(np.clip(
+                min(float(motor_2022[b]) + inc_motor[b] * offset, any_at_t[b]),
+                0.0, 1.0,
+            ))
+            for b in BRACKETS
+        }
+        rates_at_t = AllRates(any_dis=Rates(any_at_t), motor_phys=Rates(motor_at_t))
+        snapshots.append(TransitionSnapshot(float(offset), rates_at_t, make_profiles(rates_at_t)))
+    return snapshots
+
+
 def build_trend_schedule(
     rates_2022: AllRates,
     any_2022: Dict[str, float],
@@ -249,6 +337,7 @@ def build_trend_schedule(
     horizon_years: int,
     *,
     historical_any: Optional[Dict[int, Dict[str, float]]] = None,
+    verbose: bool = False,
 ) -> List[TransitionSnapshot]:
     """
     Build an annual transition schedule projecting rates forward from the base year.
@@ -278,142 +367,25 @@ def build_trend_schedule(
             f"Unknown or unimplemented trend {trend!r}; supported: {TREND_TYPES}"
         )
 
-    snapshots: List[TransitionSnapshot] = []
-
     if trend == "none":
         scales = {b: 1.0 for b in BRACKETS}
+        snapshots: List[TransitionSnapshot] = []
         for offset in range(int(horizon_years) + 1):
             rates_at_t = _scale_all_rates(rates_2022, scales)
             snapshots.append(TransitionSnapshot(float(offset), rates_at_t, make_profiles(rates_at_t)))
         return snapshots
 
-    if trend == "sdac_2015_2022_trend":
-        if historical_any is None or 2015 not in historical_any:
-            raise ValueError(
-                "historical_any must be provided and include year 2015 "
-                "for the 'sdac_2015_2022_trend' trend"
-            )
-
-        any_2015 = historical_any[2015]
-        _validate_bracketed_dict("historical_any[2015]", any_2015)
-
-        # Annual percentage-point increment for any_dis (fractions, not percentages).
-        # Negative when the 2015–2022 trend is declining for a bracket.
-        inc_any: Dict[str, float] = {
-            b: (float(any_2022[b]) - float(any_2015[b])) / 7
-            for b in BRACKETS
-        }
-
-        # Both any_dis and motor_phys start from the scenario-scaled household-level
-        # rates_2022 and apply increments scaled via the person-level relative change.
-        any_2022_hh = rates_2022.any_dis.by_bracket
-        motor_2022_base = rates_2022.motor_phys.by_bracket
-        inc_any_hh: Dict[str, float] = {}
-        inc_motor: Dict[str, float] = {}
-        for b in BRACKETS:
-            if float(any_2022[b]) > 0.0:
-                relative_annual_trend = float(inc_any[b]) / float(any_2022[b])
-                inc_any_hh[b] = float(any_2022_hh[b]) * relative_annual_trend
-                inc_motor[b] = float(motor_2022_base[b]) * relative_annual_trend
-            else:
-                inc_any_hh[b] = 0.0
-                inc_motor[b] = 0.0
-
-        print("Annual increments for 'sdac_2015_2022_trend':")
-        for b in BRACKETS:
-            print(
-                f"  [{b}]  any: 2015={float(any_2015[b])*100:.3f}%  "
-                f"2022(person)={float(any_2022[b])*100:.3f}%  "
-                f"2022(hh)={float(any_2022_hh[b])*100:.3f}%  "
-                f"inc={inc_any_hh[b]*100:+.4f}%/yr  |  "
-                f"motor/phys: 2022={float(motor_2022_base[b])*100:.3f}%  "
-                f"inc={inc_motor[b]*100:+.4f}%/yr"
-            )
-
-        for offset in range(int(horizon_years) + 1):
-            any_at_t = {
-                b: float(np.clip(float(any_2022_hh[b]) + inc_any_hh[b] * offset, 0.0, 1.0))
-                for b in BRACKETS
-            }
-            motor_at_t = {
-                b: float(np.clip(
-                    min(float(motor_2022_base[b]) + inc_motor[b] * offset, any_at_t[b]),
-                    0.0, 1.0,
-                ))
-                for b in BRACKETS
-            }
-            rates_at_t = AllRates(any_dis=Rates(any_at_t), motor_phys=Rates(motor_at_t))
-            snapshots.append(TransitionSnapshot(float(offset), rates_at_t, make_profiles(rates_at_t)))
-
-        return snapshots
-
-    # trend == "sdac_2003_2022_trend"
-    if historical_any is None or 2003 not in historical_any:
-        raise ValueError(
-            "historical_any must be provided and include year 2003 "
-            "for the 'sdac_2003_2022_trend' trend"
-        )
-
-    any_2003 = historical_any[2003]
-    _validate_bracketed_dict("historical_any[2003]", any_2003)
-
-    # Annual percentage-point increment for any_dis (fractions, not percentages).
-    # Negative when the 2003–2022 trend is declining for a bracket.
-    annual_increment_any: Dict[str, float] = {
-        b: (float(any_2022[b]) - float(any_2003[b])) / 19
-        for b in BRACKETS
-    }
-
-    # Both any_dis and motor_phys start from the scenario-scaled household-level
-    # rates_2022 and apply increments scaled via the person-level relative change.
-    any_2022_hh = rates_2022.any_dis.by_bracket
-    motor_2022 = rates_2022.motor_phys.by_bracket
-    annual_increment_any_hh: Dict[str, float] = {}
-    annual_increment_motor: Dict[str, float] = {}
-    for b in BRACKETS:
-        if float(any_2022[b]) > 0.0:
-            relative_annual_trend = float(annual_increment_any[b]) / float(any_2022[b])
-            annual_increment_any_hh[b] = float(any_2022_hh[b]) * relative_annual_trend
-            annual_increment_motor[b] = float(motor_2022[b]) * relative_annual_trend
-        else:
-            annual_increment_any_hh[b] = 0.0
-            annual_increment_motor[b] = 0.0
-
-    print("Annual increments for 'sdac_2003_2022_trend':")
-    for b in BRACKETS:
-        print(
-            f"  [{b}]  any: 2003={float(any_2003[b])*100:.3f}%  "
-            f"2022(person)={float(any_2022[b])*100:.3f}%  "
-            f"2022(hh)={float(any_2022_hh[b])*100:.3f}%  "
-            f"inc={annual_increment_any_hh[b]*100:+.4f}%/yr  |  "
-            f"motor/phys: 2022={float(motor_2022[b])*100:.3f}%  "
-            f"inc={annual_increment_motor[b]*100:+.4f}%/yr"
-        )
-
-    for offset in range(int(horizon_years) + 1):
-        any_at_t = {
-            b: float(np.clip(float(any_2022_hh[b]) + annual_increment_any_hh[b] * offset, 0.0, 1.0))
-            for b in BRACKETS
-        }
-        motor_at_t = {
-            b: float(np.clip(
-                min(float(motor_2022[b]) + annual_increment_motor[b] * offset, any_at_t[b]),
-                0.0, 1.0,
-            ))
-            for b in BRACKETS
-        }
-        rates_at_t = AllRates(any_dis=Rates(any_at_t), motor_phys=Rates(motor_at_t))
-        snapshots.append(TransitionSnapshot(float(offset), rates_at_t, make_profiles(rates_at_t)))
-
-    return snapshots
-
-
-def _acquire_prob(prev_rate: float, next_rate: float) -> float:
-    prev = float(prev_rate)
-    nxt = float(next_rate)
-    if nxt <= prev or prev >= 1.0:
-        return 0.0
-    return (nxt - prev) / (1.0 - prev)
+    prior_year, window_years = _LINEAR_TREND_WINDOWS[trend]
+    return _build_linear_trend_schedule(
+        rates_2022,
+        any_2022,
+        historical_any,
+        trend,
+        prior_year,
+        window_years,
+        int(horizon_years),
+        verbose=verbose,
+    )
 
 
 def _event_occurs(probability: float, rng: np.random.Generator) -> bool:
@@ -427,21 +399,18 @@ def _event_occurs(probability: float, rng: np.random.Generator) -> bool:
 
 def _seed_household_state(
     bracket: str,
-    profiles: Dict[str, object],
+    profiles: Profiles,
     rng: np.random.Generator,
 ) -> Tuple[bool, bool]:
-    adj_any = profiles["adj_any"]
-    cond_phys = profiles["cond_phys"]
-
-    any_d = rng.random() < float(adj_any[bracket])
-    phys_d = rng.random() < float(cond_phys[bracket]) if any_d else False
+    any_d = rng.random() < profiles.adj_any[bracket]
+    phys_d = rng.random() < profiles.cond_phys[bracket] if any_d else False
     return any_d, phys_d
 
 
 def _apply_time_step_transition(
     bracket: str,
-    prev_profiles: Dict[str, object],
-    next_profiles: Dict[str, object],
+    prev_profiles: Profiles,
+    next_profiles: Profiles,
     rng: np.random.Generator,
     any_d: bool,
     phys_d: bool,
@@ -449,20 +418,20 @@ def _apply_time_step_transition(
     became_any_now = False
 
     if not any_d:
-        p_any = _acquire_prob(float(prev_profiles["adj_any"][bracket]), float(next_profiles["adj_any"][bracket]))
+        p_any = _acquire_prob(prev_profiles.adj_any[bracket], next_profiles.adj_any[bracket])
         if _event_occurs(p_any, rng):
             any_d = True
             became_any_now = True
 
     if any_d:
         if became_any_now:
-            if not phys_d and _event_occurs(float(next_profiles["cond_phys"][bracket]), rng):
+            if not phys_d and _event_occurs(next_profiles.cond_phys[bracket], rng):
                 phys_d = True
         else:
             if not phys_d:
                 p_phys = _acquire_prob(
-                    float(prev_profiles["cond_phys"][bracket]),
-                    float(next_profiles["cond_phys"][bracket]),
+                    prev_profiles.cond_phys[bracket],
+                    next_profiles.cond_phys[bracket],
                 )
                 if _event_occurs(p_phys, rng):
                     phys_d = True
@@ -473,7 +442,7 @@ def _apply_time_step_transition(
 def _apply_age_boundary_transition(
     bracket: str,
     next_bracket: str,
-    profiles: Dict[str, object],
+    profiles: Profiles,
     rng: np.random.Generator,
     any_d: bool,
     phys_d: bool,
@@ -481,18 +450,18 @@ def _apply_age_boundary_transition(
     became_any_now = False
 
     if not any_d:
-        p_any = float(profiles["acq_any"].get((bracket, next_bracket), 0.0))
+        p_any = profiles.acq_any.get((bracket, next_bracket), 0.0)
         if rng.random() < p_any:
             any_d = True
             became_any_now = True
 
     if any_d:
         if became_any_now:
-            if not phys_d and rng.random() < float(profiles["cond_phys"][next_bracket]):
+            if not phys_d and rng.random() < profiles.cond_phys[next_bracket]:
                 phys_d = True
         else:
             if not phys_d:
-                p_phys = float(profiles["acq_cond_phys"].get((bracket, next_bracket), 0.0))
+                p_phys = profiles.acq_cond_phys.get((bracket, next_bracket), 0.0)
                 if rng.random() < p_phys:
                     phys_d = True
 
@@ -542,6 +511,7 @@ def run_sim(
     inmovers: InMoverDist,
     return_time_stats: bool = False,
     prebuilt_schedule: Optional[List[TransitionSnapshot]] = None,
+    verbose: bool = False,
 ) -> Dict[str, float]:
     """
     Run the Monte Carlo simulation over n_props dwellings.
@@ -621,7 +591,7 @@ def run_sim(
     for i in range(params.n_props):
 
         # ---- progress indicator ----
-        if (i + 1) % PROGRESS_EVERY == 0:
+        if verbose and (i + 1) % PROGRESS_EVERY == 0:
             elapsed = time.time() - t0
             pct = 100.0 * (i + 1) / params.n_props
             print(

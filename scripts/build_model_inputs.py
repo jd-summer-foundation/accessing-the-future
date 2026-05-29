@@ -9,8 +9,6 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
-_ABS_FOOTNOTE_RE = re.compile(r"^\([a-z]\)")  # strips leading markers like (f), (i)
-
 import numpy as np
 import pandas as pd
 
@@ -18,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from au_housing_disability_monte_carlo import BRACKETS
 from scripts.pipeline_utils import (
     AGE_COL,
     DEFAULT_DERIVATION_CONFIG,
@@ -26,7 +25,6 @@ from scripts.pipeline_utils import (
     DEFAULT_RAW_WORKBOOK,
     DEFAULT_SDACDC01_XLSX,
     HIST_RATE_ANY_COL_PREFIX,
-    HIST_RATE_COLUMNS,
     HIST_SURVEY_YEARS,
     INMOVER_COL,
     MODEL_INPUT_COLUMNS,
@@ -41,6 +39,8 @@ from scripts.pipeline_utils import (
     load_yaml,
     validate_model_inputs,
 )
+
+_ABS_FOOTNOTE_RE = re.compile(r"^\([a-z]\)")  # strips leading markers like (f), (i)
 
 
 def parse_args() -> argparse.Namespace:
@@ -191,8 +191,6 @@ def _load_historical_rates_from_sdacdc01(
         _SDACDC01_HIST_YEAR_COLS,
     ]
 
-    from au_housing_disability_monte_carlo import BRACKETS
-
     result: Dict[int, Dict[str, float]] = {}
     for year_idx, year in enumerate(HIST_SURVEY_YEARS):
         weighted_sums: Dict[str, float] = {b: 0.0 for b in BRACKETS}
@@ -263,7 +261,6 @@ def build_model_inputs(
     hist_rates = _load_historical_rates_from_sdacdc01(sdacdc01_path, population_weights)
     for year in HIST_SURVEY_YEARS:
         col = f"{HIST_RATE_ANY_COL_PREFIX}{year}"
-        from au_housing_disability_monte_carlo import BRACKETS
         df[col] = [float(hist_rates[year][b]) for b in BRACKETS]
 
     return df

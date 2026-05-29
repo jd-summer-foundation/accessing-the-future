@@ -8,7 +8,7 @@ def test_make_profiles_enforces_monotone_any_and_clipped_conditionals() -> None:
     )
 
     profiles = eng.make_profiles(rates)
-    adjusted_any = [profiles["adj_any"][bracket] for bracket in eng.BRACKETS]
+    adjusted_any = [profiles.adj_any[bracket] for bracket in eng.BRACKETS]
 
     assert adjusted_any == sorted(adjusted_any)
-    assert all(0.0 <= profiles["cond_phys"][bracket] <= 1.0 for bracket in eng.BRACKETS)
+    assert all(0.0 <= profiles.cond_phys[bracket] <= 1.0 for bracket in eng.BRACKETS)
