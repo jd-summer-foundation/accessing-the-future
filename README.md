@@ -45,6 +45,7 @@ make build-data
 make validate-data
 make run-baseline
 make report
+make manuscript
 make reproduce
 make release-check
 ```
@@ -86,6 +87,7 @@ make smoke
 - [scripts/build_model_inputs.py](scripts/build_model_inputs.py) extracts disability prevalence, margin-of-error bounds, and household totals from SDAC22, tenure distributions from Housing Mobility Table 2.2, and derives the in-mover distribution from raw `<1 year` tenure counts by age.
 - [run_from_excel.py](run_from_excel.py) reads `data/processed/model_inputs.csv`, normalizes distributions, projects disability rates forward under the configured trend (see [Time-Varying Disability Rates](#time-varying-disability-rates)), expands each configured scenario into low/base/high confidence-bound cases when MoE inputs are available, and writes run manifests.
 - [scripts/generate_reports.py](scripts/generate_reports.py) converts scenario summaries into one table and two figures.
+- [scripts/manuscript_figures.py](scripts/manuscript_figures.py) produces the paper-facing Table 1 and Figures 1-2 (base estimate with low/high error bars per scenario) into `reports/manuscript/`.
 
 ### Outputs
 - `data/processed/model_inputs.csv`
@@ -97,6 +99,8 @@ make smoke
 - `reports/tables/table_01_scenario_summary.md`
 - `reports/figures/figure_01_ever_probabilities.png`
 - `reports/figures/figure_02_time_share.png`
+- `reports/manuscript/table_scenario_summary.{csv,md}` (paper Table 1)
+- `reports/manuscript/figure_01_ever_probabilities.png`, `reports/manuscript/figure_02_time_share.png` (paper Figures 1-2)
 
 ## Reproducibility Notes
 
