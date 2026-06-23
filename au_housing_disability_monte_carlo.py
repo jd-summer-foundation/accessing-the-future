@@ -12,7 +12,7 @@ Households:
 - once acquired, a condition persists for that household (no recovery modelled)
 
 Categories tracked (household-level):
-1) any_dis: any disability (base category; prevalence by age bracket; enforced non-decreasing with age)
+1) any_dis: any disability (base category; prevalence by age bracket, used as supplied)
 2) motor_phys: mobility/physical disability proxy, modelled as a SUBTYPE of any_dis (conditional on any_dis)
 
 Outputs (summary dict):
@@ -96,9 +96,9 @@ class SimParams:
 
 @dataclass(frozen=True)
 class Profiles:
-    """Adjusted prevalence profiles and acquisition probabilities for a rate set.
+    """Prevalence profiles and acquisition probabilities for a rate set.
 
-    - adj_any[b]: monotone (non-decreasing) ANY prevalence per bracket
+    - adj_any[b]: ANY prevalence per bracket, used as supplied (not forced monotone)
     - cond_phys[b]: P(motor_phys | any_dis) per bracket
     - acq_any[(b0, b1)]: P(acquire ANY) at the b0 -> b1 age boundary
     - acq_cond_phys[(b0, b1)]: P(acquire subtype | already ANY) at that boundary
@@ -148,16 +148,6 @@ def _validate_probs(name: str, probs: List[float], tol: float = 1e-6) -> List[fl
     return arr.tolist()
 
 
-def _cumulative_max_monotone(vals: List[float]) -> List[float]:
-    """Make a list non-decreasing by cumulative max."""
-    out = []
-    m = -np.inf
-    for v in vals:
-        m = max(m, float(v))
-        out.append(m)
-    return out
-
-
 def _acquire_prob(prev_rate: float, next_rate: float) -> float:
     """Persistence-model acquisition probability for a prev->next prevalence step:
     (next - prev) / (1 - prev) when rising, else 0."""
@@ -170,9 +160,10 @@ def _acquire_prob(prev_rate: float, next_rate: float) -> float:
 
 def _acquire_probs_from_adjusted(adjusted_rates: Dict[str, float]) -> Dict[Tuple[str, str], float]:
     """
-    Given an adjusted (non-decreasing) prevalence profile across age brackets,
-    compute per-transition acquisition probabilities under persistence by applying
-    _acquire_prob to each b0 -> b1 bracket pair.
+    Given a prevalence profile across age brackets, compute per-transition
+    acquisition probabilities under persistence by applying _acquire_prob to each
+    b0 -> b1 bracket pair. Where prevalence declines between brackets the
+    acquisition probability is zero (conditions are never lost).
     """
     _validate_bracketed_dict("adjusted_rates", adjusted_rates)
     return {
@@ -185,9 +176,12 @@ def _acquire_probs_from_adjusted(adjusted_rates: Dict[str, float]) -> Dict[Tuple
 
 def make_profiles(all_rates: AllRates) -> Profiles:
     """
-    Build adjusted profiles and acquisition probabilities for:
+    Build prevalence profiles and acquisition probabilities for:
 
-      - ANY disability (base): monotone with age via cumulative max
+      - ANY disability (base): used as supplied, without forcing monotonicity.
+        Where prevalence happens to fall between brackets (e.g. 15-24 -> 25-34
+        at the household level), the corresponding acquisition probability is
+        zero rather than negative, consistent with the no-recovery assumption.
       - motor_phys: conditional on ANY (subtype)
 
     See the Profiles dataclass for the returned fields.
@@ -195,16 +189,14 @@ def make_profiles(all_rates: AllRates) -> Profiles:
     _validate_bracketed_dict("any_dis", all_rates.any_dis.by_bracket)
     _validate_bracketed_dict("motor_phys", all_rates.motor_phys.by_bracket)
 
-    # ANY: enforce non-decreasing prevalence
-    ordered_any = [float(all_rates.any_dis.by_bracket[b]) for b in BRACKETS]
-    adj_any_list = _cumulative_max_monotone(ordered_any)
-    adj_any = dict(zip(BRACKETS, adj_any_list))
+    # ANY: use the supplied per-bracket prevalence directly (no monotone adjustment).
+    adj_any = {b: float(all_rates.any_dis.by_bracket[b]) for b in BRACKETS}
 
-    # Helper to build conditional P(subtype | any) from subtype total + ANY adjusted totals
+    # Helper to build conditional P(subtype | any) from subtype total + ANY totals
     def build_cond_subtype(total_by_bracket: Dict[str, float]) -> Dict[str, float]:
         cond: Dict[str, float] = {}
         for b in BRACKETS:
-            ra = float(adj_any[b])                  # adjusted ANY total
+            ra = float(adj_any[b])                  # ANY total (as supplied)
             rt = float(total_by_bracket[b])         # subtype total
             if ra <= 0.0:
                 # if ANY is 0 but subtype > 0, clamp to 1 (still yields 0 total in simulation unless ANY occurs)
