@@ -9,7 +9,7 @@ The reporting step currently generates the following manuscript-facing artifacts
 
 ## Artifact map
 
-- `table_01_scenario_summary` summarises the four baseline scenarios and their key outcome metrics.
+- `table_01_scenario_summary` summarises the five baseline scenarios and their key outcome metrics.
 - `figure_01_ever_probabilities` plots the probability that a dwelling ever hosts each household category.
 - `figure_02_time_share` plots the average share of occupancy time for each household category.
 
