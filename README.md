@@ -46,6 +46,7 @@ make validate-data
 make run-baseline
 make report
 make manuscript
+make trend-tables
 make reproduce
 make release-check
 ```
@@ -88,6 +89,7 @@ make smoke
 - [run_from_excel.py](run_from_excel.py) reads `data/processed/model_inputs.csv`, normalizes distributions, projects disability rates forward under the configured trend (see [Time-Varying Disability Rates](#time-varying-disability-rates)), expands each configured scenario into low/base/high confidence-bound cases when MoE inputs are available, and writes run manifests.
 - [scripts/generate_reports.py](scripts/generate_reports.py) converts scenario summaries into one table and two figures.
 - [scripts/manuscript_figures.py](scripts/manuscript_figures.py) produces the paper-facing Table 1 and Figures 1-2 (base estimate with low/high error bars per scenario) into `reports/manuscript/`.
+- [scripts/trend_schedule_table.py](scripts/trend_schedule_table.py) exports the appendix trend-transparency tables: the per-bracket trend parameters derived from the SDAC time series, and the full schedule of age-specific disability rates applied in every simulation year under each trend treatment. Built with the same `build_trend_schedule` code path the simulation uses, so the tables show exactly the rates that enter the Monte Carlo.
 
 ### Outputs
 - `data/processed/model_inputs.csv`
@@ -101,6 +103,8 @@ make smoke
 - `reports/figures/figure_02_time_share.png`
 - `reports/manuscript/table_scenario_summary.{csv,md}` (paper Table 1)
 - `reports/manuscript/figure_01_ever_probabilities.png`, `reports/manuscript/figure_02_time_share.png` (paper Figures 1-2)
+- `reports/tables/table_a1_trend_parameters.{csv,md}` (appendix: per-bracket trend derivation)
+- `reports/tables/table_a2_trend_schedules.{csv,md}` (appendix: age-specific rates per simulation year, per trend scenario)
 
 ## Reproducibility Notes
 

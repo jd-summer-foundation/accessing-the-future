@@ -2,7 +2,7 @@ PYTHON ?= python3
 BASELINE_CONFIG ?= configs/baseline.yaml
 SMOKE_CONFIG ?= configs/smoke.yaml
 
-.PHONY: verify-data build-data validate-data run-baseline report manuscript reproduce smoke release-check test
+.PHONY: verify-data build-data validate-data run-baseline report manuscript trend-tables reproduce smoke release-check test
 
 verify-data:
 	$(PYTHON) scripts/verify_data.py
@@ -22,10 +22,14 @@ report:
 manuscript:
 	$(PYTHON) scripts/manuscript_figures.py --results-dir results/baseline --reports-dir reports
 
+trend-tables:
+	$(PYTHON) scripts/trend_schedule_table.py --config $(BASELINE_CONFIG) --reports-dir reports
+
 reproduce: build-data validate-data
 	$(PYTHON) run_from_excel.py --config $(BASELINE_CONFIG)
 	$(PYTHON) scripts/generate_reports.py --results-dir results/baseline --reports-dir reports
 	$(PYTHON) scripts/manuscript_figures.py --results-dir results/baseline --reports-dir reports
+	$(PYTHON) scripts/trend_schedule_table.py --config $(BASELINE_CONFIG) --reports-dir reports
 
 smoke: build-data validate-data
 	$(PYTHON) run_from_excel.py --config $(SMOKE_CONFIG)
