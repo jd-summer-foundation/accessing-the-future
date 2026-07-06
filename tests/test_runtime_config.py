@@ -58,6 +58,24 @@ run:
     assert runtime["horizon_years"] == 50
 
 
+def test_runtime_reads_age_transition_mode(tmp_path: Path) -> None:
+    config = tmp_path / "annual_mode.yaml"
+    config.write_text(
+        """
+run:
+  name: annual_mode
+  seed: 123
+  n_props: 10
+  age_transition_mode: annual_interpolated
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    runtime = _build_runtime(_args(config))
+
+    assert runtime["age_transition_mode"] == "annual_interpolated"
+
+
 def test_uncertainty_cases_expand_only_when_moes_are_available() -> None:
     assert _uncertainty_cases({}) == ["base"]
     assert _uncertainty_cases({RATE_ANY_COL: {"15-24": 0.039}}) == ["low", "base", "high"]

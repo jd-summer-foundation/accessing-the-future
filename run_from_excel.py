@@ -143,6 +143,7 @@ def _build_runtime(args: argparse.Namespace) -> Dict[str, object]:
         "return_time_stats": bool(run_cfg.get("return_time_stats", True)),
         "scenarios": config.get("scenarios") or _default_scenarios(),
         "transition_model_config": config.get("transition_model"),
+        "age_transition_mode": str(run_cfg.get("age_transition_mode", "bracket_boundary")),
         "start_year": int(run_cfg.get("start_year", 2022)),
         "verbose": args.verbose,
         "cli_args": {key: value for key, value in vars(args).items() if value is not None and key != "verbose"},
@@ -342,6 +343,7 @@ def _write_manifest(runtime: Dict[str, object], scenario_summaries: pd.DataFrame
             "seed": runtime["seed"],
             "horizon_years": runtime["horizon_years"],
             "return_time_stats": runtime["return_time_stats"],
+            "age_transition_mode": runtime["age_transition_mode"],
         },
         "cli_overrides": runtime["cli_args"],
         "scenarios": serialise_for_json(runtime["scenarios"]),
@@ -415,6 +417,7 @@ def main() -> None:
             seed=int(runtime["seed"]),
             horizon_years=int(runtime["horizon_years"]),
             disabled_tenure_factor=float(scenario.get("disabled_tenure_factor", 1.0)),
+            age_transition_mode=str(runtime["age_transition_mode"]),
         )
         for uncertainty_case in _uncertainty_cases(prepared["rate_moe_maps"]):
             scenario_rates = _build_scaled_rates(
@@ -461,6 +464,7 @@ def main() -> None:
                     "rate_scale": float(scenario.get("rate_scale", 1.0)),
                     "rate_scales": scenario.get("rate_scales", {}),
                     "transition_model": {"type": "trend", "trend": trend, "base_year": base_year},
+                    "age_transition_mode": params.age_transition_mode,
                 }
             )
 

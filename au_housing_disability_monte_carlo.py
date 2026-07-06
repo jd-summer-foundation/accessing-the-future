@@ -30,6 +30,25 @@ import time
 
 BRACKETS: List[str] = ["15-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75+"]
 BRACKET_IDX = {b: i for i, b in enumerate(BRACKETS)}
+AGE_TRANSITION_MODES: Tuple[str, ...] = ("bracket_boundary", "annual_interpolated")
+BRACKET_START_AGES: Dict[str, int] = {
+    "15-24": 15,
+    "25-34": 25,
+    "35-44": 35,
+    "45-54": 45,
+    "55-64": 55,
+    "65-74": 65,
+    "75+": 75,
+}
+BRACKET_MIDPOINT_AGES: Dict[str, float] = {
+    "15-24": 19.5,
+    "25-34": 29.5,
+    "35-44": 39.5,
+    "45-54": 49.5,
+    "55-64": 59.5,
+    "65-74": 69.5,
+    "75+": 79.5,
+}
 
 # Forward-projection trends off the base year.
 # "none": hold base-year rates flat for the whole horizon.
@@ -92,6 +111,7 @@ class SimParams:
 
     # If household currently has ANY/PHYSICAL, lengthen tenure by this factor (e.g. 1.2)
     disabled_tenure_factor: float = 1.0
+    age_transition_mode: str = "bracket_boundary"
 
 
 @dataclass(frozen=True)
@@ -172,6 +192,40 @@ def _acquire_probs_from_adjusted(adjusted_rates: Dict[str, float]) -> Dict[Tuple
         )
         for i in range(len(BRACKETS) - 1)
     }
+
+
+def _interpolate_bracket_rate(by_bracket: Dict[str, float], age: int) -> float:
+    """Linearly interpolate the target prevalence between bracket midpoint ages."""
+    _validate_bracketed_dict("by_bracket", by_bracket)
+    age_f = float(age)
+    if age_f <= BRACKET_MIDPOINT_AGES[BRACKETS[0]]:
+        return float(by_bracket[BRACKETS[0]])
+    if age_f >= BRACKET_MIDPOINT_AGES["75+"]:
+        return float(by_bracket["75+"])
+
+    for idx, bracket in enumerate(BRACKETS[:-1]):
+        start_age = BRACKET_MIDPOINT_AGES[bracket]
+        next_bracket = BRACKETS[idx + 1]
+        next_start_age = BRACKET_MIDPOINT_AGES[next_bracket]
+        if start_age <= age_f < next_start_age:
+            span = float(next_start_age - start_age)
+            frac = float(age_f - start_age) / span
+            start_rate = float(by_bracket[bracket])
+            end_rate = float(by_bracket[next_bracket])
+            return start_rate + frac * (end_rate - start_rate)
+
+    return float(by_bracket["75+"])
+
+
+def _bracket_for_age(age: int) -> str:
+    if age >= BRACKET_START_AGES["75+"]:
+        return "75+"
+    for idx, bracket in enumerate(BRACKETS[:-1]):
+        start_age = BRACKET_START_AGES[bracket]
+        next_start_age = BRACKET_START_AGES[BRACKETS[idx + 1]]
+        if start_age <= age < next_start_age:
+            return bracket
+    return BRACKETS[0]
 
 
 def make_profiles(all_rates: AllRates) -> Profiles:
@@ -399,6 +453,18 @@ def _seed_household_state(
     return any_d, phys_d
 
 
+def _seed_household_state_at_age(
+    age: int,
+    profiles: Profiles,
+    rng: np.random.Generator,
+) -> Tuple[bool, bool]:
+    p_any = _interpolate_bracket_rate(profiles.adj_any, age)
+    p_phys_cond = _interpolate_bracket_rate(profiles.cond_phys, age)
+    any_d = _event_occurs(p_any, rng)
+    phys_d = _event_occurs(p_phys_cond, rng) if any_d else False
+    return any_d, phys_d
+
+
 def _apply_time_step_transition(
     bracket: str,
     prev_profiles: Profiles,
@@ -460,6 +526,34 @@ def _apply_age_boundary_transition(
     return any_d, phys_d
 
 
+def _apply_annual_age_transition(
+    age: int,
+    profiles: Profiles,
+    rng: np.random.Generator,
+    any_d: bool,
+    phys_d: bool,
+) -> Tuple[bool, bool]:
+    became_any_now = False
+    prev_any = _interpolate_bracket_rate(profiles.adj_any, age)
+    next_any = _interpolate_bracket_rate(profiles.adj_any, age + 1)
+
+    if not any_d and _event_occurs(_acquire_prob(prev_any, next_any), rng):
+        any_d = True
+        became_any_now = True
+
+    if any_d:
+        next_cond_phys = _interpolate_bracket_rate(profiles.cond_phys, age + 1)
+        if became_any_now:
+            if not phys_d and _event_occurs(next_cond_phys, rng):
+                phys_d = True
+        elif not phys_d:
+            prev_cond_phys = _interpolate_bracket_rate(profiles.cond_phys, age)
+            if _event_occurs(_acquire_prob(prev_cond_phys, next_cond_phys), rng):
+                phys_d = True
+
+    return any_d, phys_d
+
+
 def _prepare_cdf(name: str, probs: List[float]) -> np.ndarray:
     """Validate and compute CDF once for a probability vector."""
     p = _validate_probs(name, probs)
@@ -511,6 +605,12 @@ def run_sim(
     Returns a summary dict of probabilities (and optional time stats).
     """
 
+    if params.age_transition_mode not in AGE_TRANSITION_MODES:
+        raise ValueError(
+            f"Unknown age_transition_mode {params.age_transition_mode!r}; "
+            f"supported: {AGE_TRANSITION_MODES}"
+        )
+
     rng = np.random.default_rng(params.seed)
 
     # Validate inputs
@@ -557,6 +657,12 @@ def run_sim(
         age = int(rng.integers(lo, hi + 1))  # uniform over inclusive ages in bracket
         return float(hi - age + 1)           # e.g. 35->10 years; 44->1 year
 
+    def sample_age_at_move_in(br: str) -> int:
+        lo, hi = br_bounds[br]
+        if hi is None:
+            hi = lo + 9
+        return int(rng.integers(lo, hi + 1))
+
 
     # Pre-compute CDFs for probability vectors (validate once, not on every sample)
     inmover_vec = [float(inmovers.probs_by_bracket[b]) for b in BRACKETS]
@@ -595,10 +701,15 @@ def run_sim(
         transition_idx = 0
         current_snapshot = schedule[transition_idx]
         br = pick_first_bracket()
-        yrs_to_boundary = years_to_boundary_at_move_in(br)
+        age_year = sample_age_at_move_in(br) if params.age_transition_mode == "annual_interpolated" else None
+        yrs_to_boundary = 1.0 if params.age_transition_mode == "annual_interpolated" else years_to_boundary_at_move_in(br)
 
         # Seed first household statuses from prevalence at starting bracket
-        any_d, phys_d = _seed_household_state(br, current_snapshot.profiles, rng)
+        if params.age_transition_mode == "annual_interpolated":
+            assert age_year is not None
+            any_d, phys_d = _seed_household_state_at_age(age_year, current_snapshot.profiles, rng)
+        else:
+            any_d, phys_d = _seed_household_state(br, current_snapshot.profiles, rng)
 
         ever_any[i] = ever_any[i] or any_d
         ever_phys[i] = ever_phys[i] or phys_d
@@ -654,19 +765,32 @@ def run_sim(
 
                 # If we've hit a bracket boundary, transition to next bracket and apply acquisitions.
                 # Calendar-time transitions are processed first when both happen at the same instant.
-                if hit_age_boundary and br != "75+" and t < float(params.horizon_years):
-                    next_br = BRACKETS[BRACKET_IDX[br] + 1]
+                if hit_age_boundary and t < float(params.horizon_years):
+                    if params.age_transition_mode == "annual_interpolated":
+                        assert age_year is not None
+                        any_d, phys_d = _apply_annual_age_transition(
+                            age_year,
+                            current_snapshot.profiles,
+                            rng,
+                            any_d,
+                            phys_d,
+                        )
+                        age_year += 1
+                        br = _bracket_for_age(age_year)
+                        yrs_to_boundary = 1.0
+                    elif br != "75+":
+                        next_br = BRACKETS[BRACKET_IDX[br] + 1]
 
-                    any_d, phys_d = _apply_age_boundary_transition(
-                        br,
-                        next_br,
-                        current_snapshot.profiles,
-                        rng,
-                        any_d,
-                        phys_d,
-                    )
-                    br = next_br
-                    yrs_to_boundary = width_map[br]  # now at the start of the new bracket
+                        any_d, phys_d = _apply_age_boundary_transition(
+                            br,
+                            next_br,
+                            current_snapshot.profiles,
+                            rng,
+                            any_d,
+                            phys_d,
+                        )
+                        br = next_br
+                        yrs_to_boundary = width_map[br]  # now at the start of the new bracket
                     ever_any[i] = ever_any[i] or any_d
                     ever_phys[i] = ever_phys[i] or phys_d
 
@@ -674,9 +798,14 @@ def run_sim(
             if t < float(params.horizon_years):
                 # Subsequent households always use in-mover distribution
                 br = BRACKETS[_sample_from_cdf(inmover_cdf, rng)]
-                yrs_to_boundary = years_to_boundary_at_move_in(br)
+                age_year = sample_age_at_move_in(br) if params.age_transition_mode == "annual_interpolated" else None
+                yrs_to_boundary = 1.0 if params.age_transition_mode == "annual_interpolated" else years_to_boundary_at_move_in(br)
 
-                any_d, phys_d = _seed_household_state(br, current_snapshot.profiles, rng)
+                if params.age_transition_mode == "annual_interpolated":
+                    assert age_year is not None
+                    any_d, phys_d = _seed_household_state_at_age(age_year, current_snapshot.profiles, rng)
+                else:
+                    any_d, phys_d = _seed_household_state(br, current_snapshot.profiles, rng)
 
                 ever_any[i] = ever_any[i] or any_d
                 ever_phys[i] = ever_phys[i] or phys_d
