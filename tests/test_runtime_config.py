@@ -2,9 +2,10 @@ import argparse
 from pathlib import Path
 
 import au_housing_disability_monte_carlo as eng
+import pandas as pd
 import pytest
-from run_from_excel import _build_runtime, _build_scaled_rates, _uncertainty_cases
-from scripts.pipeline_utils import RATE_ANY_COL, RATE_MOTOR_COL
+from run_from_excel import _build_runtime, _build_scaled_rates, _uncertainty_cases, prepare_simulation_inputs
+from scripts.pipeline_utils import AGE_COL, RATE_ANY_COL, RATE_MOTOR_COL, TENURE_COLUMNS
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -79,3 +80,37 @@ def test_scaled_rates_apply_low_and_high_moe_bounds() -> None:
     assert low.any_dis.by_bracket["15-24"] == pytest.approx(0.196)
     assert base.any_dis.by_bracket["15-24"] == pytest.approx(0.235)
     assert high.any_dis.by_bracket["15-24"] == pytest.approx(0.274)
+
+
+def test_prepare_simulation_inputs_converts_sub_one_percent_tenure_values() -> None:
+    base_row = {
+        RATE_ANY_COL: 10.0,
+        RATE_MOTOR_COL: 5.0,
+        "Of those who have length of tenure <1 year, what proportion are in each age bucket?": 1.0 / len(eng.BRACKETS),
+    }
+    base_row.update({column: 0.0 for column in TENURE_COLUMNS})
+
+    rows = []
+    for bracket in eng.BRACKETS:
+        row = {AGE_COL: bracket, **base_row}
+        if bracket == "25-34":
+            row.update(
+                {
+                    "Length of tenure: less than 1 year  (% of all households, not count)": 26.0,
+                    "Length of tenure: 1-2 years": 19.7,
+                    "Length of tenure: 2-3 years": 17.4,
+                    "Length of tenure: 3-4 years": 20.9,
+                    "Length of tenure: 5-9 years": 13.0,
+                    "Length of tenure: 10-19 years": 2.4,
+                    "Length of tenure: 20+ years": 0.5,
+                }
+            )
+        else:
+            row["Length of tenure: less than 1 year  (% of all households, not count)"] = 100.0
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+
+    prepared = prepare_simulation_inputs(df)
+
+    assert prepared["tenure"].probs_by_bracket["25-34"][-1] == pytest.approx(0.005005005005005005)

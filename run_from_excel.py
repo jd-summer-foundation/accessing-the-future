@@ -52,6 +52,13 @@ def _to_rate(value: object) -> float:
     return rate
 
 
+def _percent_to_fraction(value: object) -> float:
+    numeric = pd.to_numeric(value, errors="coerce")
+    if pd.isna(numeric):
+        return float("nan")
+    return float(numeric) / 100.0
+
+
 def _normalise_dist(data: Dict[str, float], name: str) -> Dict[str, float]:
     values = np.array([float(data[bracket]) for bracket in eng.BRACKETS], dtype=float)
     values = np.where(np.isfinite(values), values, 0.0)
@@ -75,7 +82,7 @@ def _extract_bracketed_series(
         if row.empty or series_name not in valid_rows.columns:
             out[bracket] = float(fallback[bracket])
             continue
-        value = _to_rate(row.iloc[0][series_name])
+        value = _percent_to_fraction(row.iloc[0][series_name])
         out[bracket] = float(fallback[bracket]) if not np.isfinite(value) else float(value)
     return out
 
@@ -155,7 +162,7 @@ def prepare_simulation_inputs(df: pd.DataFrame) -> Dict[str, object]:
         row = valid_rows.loc[valid_rows[AGE_COL] == bracket]
         if row.empty:
             raise ValueError(f"Missing tenure row for bracket {bracket}")
-        values = [_to_rate(row.iloc[0][column]) for column in TENURE_COLUMNS]
+        values = [_percent_to_fraction(row.iloc[0][column]) for column in TENURE_COLUMNS]
         arr = np.clip(np.asarray(values, dtype=float), 0.0, None)
         total = float(arr.sum())
         if total <= 0:
