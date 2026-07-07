@@ -48,6 +48,8 @@ make report
 make manuscript
 make reproduce
 make release-check
+make first-occupancy
+make retrofit-cost
 ```
 
 For a fast smoke run:
@@ -101,6 +103,34 @@ make smoke
 - `reports/figures/figure_02_time_share.png`
 - `reports/manuscript/table_scenario_summary.{csv,md}` (paper Table 1)
 - `reports/manuscript/figure_01_ever_probabilities.png`, `reports/manuscript/figure_02_time_share.png` (paper Figures 1-2)
+
+## First-Occupancy Timing and Retrofit Cost Comparison
+
+Two optional analyses build on the main simulation to support build-in vs
+retrofit cost modelling:
+
+- [scripts/first_occupancy_analysis.py](scripts/first_occupancy_analysis.py)
+  (`make first-occupancy`) reruns the central specification and records, for
+  each dwelling, *when* it is first occupied by a household with each
+  disability category and whether that household moved in with the condition
+  or acquired it in place. It writes summary timing statistics
+  (`results/first_occupancy/first_occupancy_summary.csv`) and a year-by-year
+  cumulative distribution of first occupancy
+  (`results/first_occupancy/first_occupancy_cdf.csv`), plus a run manifest.
+  The tracking consumes no random draws, so headline results are unchanged.
+  By default the target uses [configs/annual_interpolated.yaml](configs/annual_interpolated.yaml);
+  override with `FIRST_OCCUPANCY_CONFIG=configs/baseline.yaml` for
+  bracket-boundary ageing.
+- [scripts/retrofit_cost_comparison.py](scripts/retrofit_cost_comparison.py)
+  (`make retrofit-cost`) uses that cumulative distribution to compare the
+  discounted cost of two delivery routes: building the LHDS features into
+  every dwelling at construction vs retrofitting each dwelling in the year it
+  is first occupied by a relevant household. This is a delivery-route
+  comparator, not a prediction of actual retrofit behaviour. Default
+  parameters (CIE 2021 Class 1a costs of $4,000/$19,000 in 2021 dollars,
+  505,000 NSW+WA Accord dwellings, discount rates 0/3/5/7%) are recorded in
+  the output and manifest and can be overridden on the command line. Results
+  land in `results/retrofit_cost/retrofit_cost_comparison.csv`.
 
 ## Reproducibility Notes
 

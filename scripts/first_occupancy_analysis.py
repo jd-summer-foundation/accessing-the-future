@@ -17,9 +17,15 @@ The cumulative distribution is the input a discounted-cashflow comparison of
 build-in vs retrofit actually needs; the conditional mean alone is censored at
 the horizon and excludes the ~40% of dwellings with no such occupancy.
 
-Outputs:
-  results/first_occupancy/first_occupancy_summary.csv
-  results/first_occupancy/first_occupancy_cdf.csv
+Outputs (in --outdir, default results/first_occupancy/):
+  first_occupancy_summary.csv
+  first_occupancy_cdf.csv
+  run_manifest.json  (input/config checksums, git commit, runtime settings)
+
+Run settings (n_props, seed, horizon, age_transition_mode) are taken from the
+run config; pass --config configs/annual_interpolated.yaml for the annual
+midpoint-interpolated ageing model, or configs/baseline.yaml (default) for
+bracket-boundary ageing.
 """
 
 from __future__ import annotations
@@ -45,9 +51,16 @@ from run_from_excel import (
 from scripts.pipeline_utils import (
     DEFAULT_BASELINE_CONFIG,
     HIST_SURVEY_YEARS,
+    artifact_checksums,
+    dependency_versions,
+    git_commit,
     load_model_inputs,
     load_yaml,
     resolve_input_path,
+    serialise_for_json,
+    sha256_file,
+    utc_now_iso,
+    write_json,
 )
 
 CENTRAL_SCENARIO = {"name": "main_inmover_first", "disabled_tenure_factor": 1.0, "rate_scale": 1.0}
@@ -158,8 +171,38 @@ def main() -> None:
     outdir.mkdir(parents=True, exist_ok=True)
     summary_df = pd.DataFrame(summary_rows)
     cdf_df = pd.DataFrame(cdf_rows)
-    summary_df.to_csv(outdir / "first_occupancy_summary.csv", index=False)
-    cdf_df.to_csv(outdir / "first_occupancy_cdf.csv", index=False)
+    summary_path = outdir / "first_occupancy_summary.csv"
+    cdf_path = outdir / "first_occupancy_cdf.csv"
+    summary_df.to_csv(summary_path, index=False)
+    cdf_df.to_csv(cdf_path, index=False)
+
+    manifest = {
+        "generated_at_utc": utc_now_iso(),
+        "run_name": "first_occupancy",
+        "git_commit": git_commit(ROOT),
+        "python_version": sys.version.split()[0],
+        "dependency_versions": dependency_versions(),
+        "input": {"path": input_path, "sha256": sha256_file(input_path)},
+        "config": {
+            "path": args.config,
+            "sha256": sha256_file(args.config) if args.config and args.config.exists() else None,
+            "values": serialise_for_json(config),
+        },
+        "runtime": {
+            "output_dir": outdir,
+            "n_props": n_props,
+            "seed": seed,
+            "horizon_years": horizon,
+            "age_transition_mode": age_transition_mode,
+            "scenario": serialise_for_json(CENTRAL_SCENARIO),
+            "trend": "none",
+        },
+        "outputs": {
+            "directory": outdir,
+            "artifact_checksums": artifact_checksums([summary_path, cdf_path], relative_to=outdir),
+        },
+    }
+    write_json(outdir / "run_manifest.json", manifest)
 
     pd.set_option("display.width", 200)
     print(summary_df.to_string(index=False))
