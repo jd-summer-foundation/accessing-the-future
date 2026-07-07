@@ -23,9 +23,8 @@ Outputs (in --outdir, default results/first_occupancy/):
   run_manifest.json  (input/config checksums, git commit, runtime settings)
 
 Run settings (n_props, seed, horizon, age_transition_mode) are taken from the
-run config; pass --config configs/annual_interpolated.yaml for the annual
-midpoint-interpolated ageing model, or configs/baseline.yaml (default) for
-bracket-boundary ageing.
+run config (default: configs/baseline.yaml, which uses the canonical annual
+midpoint-interpolated ageing model).
 """
 
 from __future__ import annotations

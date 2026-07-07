@@ -118,9 +118,11 @@ retrofit cost modelling:
   cumulative distribution of first occupancy
   (`results/first_occupancy/first_occupancy_cdf.csv`), plus a run manifest.
   The tracking consumes no random draws, so headline results are unchanged.
-  By default the target uses [configs/annual_interpolated.yaml](configs/annual_interpolated.yaml);
-  override with `FIRST_OCCUPANCY_CONFIG=configs/baseline.yaml` for
-  bracket-boundary ageing.
+  By default the target uses the canonical
+  [configs/baseline.yaml](configs/baseline.yaml) (annual midpoint-interpolated
+  ageing); point `FIRST_OCCUPANCY_CONFIG` at a config with
+  `age_transition_mode: bracket_boundary` to compare against bracket-boundary
+  ageing.
 - [scripts/retrofit_cost_comparison.py](scripts/retrofit_cost_comparison.py)
   (`make retrofit-cost`) uses that cumulative distribution to compare the
   discounted cost of two delivery routes: building the LHDS features into
@@ -134,7 +136,7 @@ retrofit cost modelling:
 
 ## Reproducibility Notes
 
-- Fixed defaults for the baseline run live in [configs/baseline.yaml](configs/baseline.yaml): `seed=123`, `n_props=50000`, `horizon_years=20`, `start_year=2022` (the SDAC base year the trend projection is anchored to).
+- Fixed defaults for the baseline run live in [configs/baseline.yaml](configs/baseline.yaml): `seed=123`, `n_props=50000`, `horizon_years=20`, `start_year=2022` (the SDAC base year the trend projection is anchored to), and `age_transition_mode=annual_interpolated` (households age year by year, with prevalence linearly interpolated between bracket midpoints; set `bracket_boundary` for the older bucket-step behaviour).
 - `make verify-data` checks the canonical raw workbooks listed in [data/checksums.sha256](data/checksums.sha256) before rebuilds.
 - The processed CSV is deterministic and is validated against the current raw-source derivation on every `make validate-data`.
 - The run manifest records commit hash, dependency versions, input checksum, config checksum, and runtime parameters.

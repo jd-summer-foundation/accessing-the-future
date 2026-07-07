@@ -1,7 +1,7 @@
 PYTHON ?= python3
 BASELINE_CONFIG ?= configs/baseline.yaml
 SMOKE_CONFIG ?= configs/smoke.yaml
-FIRST_OCCUPANCY_CONFIG ?= configs/annual_interpolated.yaml
+FIRST_OCCUPANCY_CONFIG ?= configs/baseline.yaml
 
 .PHONY: verify-data build-data validate-data run-baseline report manuscript reproduce smoke release-check test first-occupancy retrofit-cost
 
