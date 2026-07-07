@@ -1,8 +1,9 @@
 PYTHON ?= python3
 BASELINE_CONFIG ?= configs/baseline.yaml
 SMOKE_CONFIG ?= configs/smoke.yaml
+FIRST_OCCUPANCY_CONFIG ?= configs/baseline.yaml
 
-.PHONY: verify-data build-data validate-data run-baseline report manuscript reproduce smoke release-check test
+.PHONY: verify-data build-data validate-data run-baseline report manuscript reproduce smoke release-check test first-occupancy retrofit-cost
 
 verify-data:
 	$(PYTHON) scripts/verify_data.py
@@ -30,6 +31,12 @@ reproduce: build-data validate-data
 smoke: build-data validate-data
 	$(PYTHON) run_from_excel.py --config $(SMOKE_CONFIG)
 	$(PYTHON) scripts/generate_reports.py --results-dir results/smoke --reports-dir reports/smoke
+
+first-occupancy: build-data
+	$(PYTHON) scripts/first_occupancy_analysis.py --config $(FIRST_OCCUPANCY_CONFIG)
+
+retrofit-cost: first-occupancy
+	$(PYTHON) scripts/retrofit_cost_comparison.py
 
 release-check:
 	$(PYTHON) scripts/check_release.py

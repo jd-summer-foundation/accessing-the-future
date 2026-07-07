@@ -48,6 +48,8 @@ make report
 make manuscript
 make reproduce
 make release-check
+make first-occupancy
+make retrofit-cost
 ```
 
 For a fast smoke run:
@@ -102,9 +104,39 @@ make smoke
 - `reports/manuscript/table_scenario_summary.{csv,md}` (paper Table 1)
 - `reports/manuscript/figure_01_ever_probabilities.png`, `reports/manuscript/figure_02_time_share.png` (paper Figures 1-2)
 
+## First-Occupancy Timing and Retrofit Cost Comparison
+
+Two optional analyses build on the main simulation to support build-in vs
+retrofit cost modelling:
+
+- [scripts/first_occupancy_analysis.py](scripts/first_occupancy_analysis.py)
+  (`make first-occupancy`) reruns the central specification and records, for
+  each dwelling, *when* it is first occupied by a household with each
+  disability category and whether that household moved in with the condition
+  or acquired it in place. It writes summary timing statistics
+  (`results/first_occupancy/first_occupancy_summary.csv`) and a year-by-year
+  cumulative distribution of first occupancy
+  (`results/first_occupancy/first_occupancy_cdf.csv`), plus a run manifest.
+  The tracking consumes no random draws, so headline results are unchanged.
+  By default the target uses the canonical
+  [configs/baseline.yaml](configs/baseline.yaml) (annual midpoint-interpolated
+  ageing); point `FIRST_OCCUPANCY_CONFIG` at a config with
+  `age_transition_mode: bracket_boundary` to compare against bracket-boundary
+  ageing.
+- [scripts/retrofit_cost_comparison.py](scripts/retrofit_cost_comparison.py)
+  (`make retrofit-cost`) uses that cumulative distribution to compare the
+  discounted cost of two delivery routes: building the LHDS features into
+  every dwelling at construction vs retrofitting each dwelling in the year it
+  is first occupied by a relevant household. This is a delivery-route
+  comparator, not a prediction of actual retrofit behaviour. Default
+  parameters (CIE 2021 Class 1a costs of $4,000/$19,000 in 2021 dollars,
+  505,000 NSW+WA Accord dwellings, discount rates 0/3/5/7%) are recorded in
+  the output and manifest and can be overridden on the command line. Results
+  land in `results/retrofit_cost/retrofit_cost_comparison.csv`.
+
 ## Reproducibility Notes
 
-- Fixed defaults for the baseline run live in [configs/baseline.yaml](configs/baseline.yaml): `seed=123`, `n_props=50000`, `horizon_years=20`, `start_year=2022` (the SDAC base year the trend projection is anchored to).
+- Fixed defaults for the baseline run live in [configs/baseline.yaml](configs/baseline.yaml): `seed=123`, `n_props=50000`, `horizon_years=20`, `start_year=2022` (the SDAC base year the trend projection is anchored to), and `age_transition_mode=annual_interpolated` (households age year by year, with prevalence linearly interpolated between bracket midpoints; set `bracket_boundary` for the older bucket-step behaviour).
 - `make verify-data` checks the canonical raw workbooks listed in [data/checksums.sha256](data/checksums.sha256) before rebuilds.
 - The processed CSV is deterministic and is validated against the current raw-source derivation on every `make validate-data`.
 - The run manifest records commit hash, dependency versions, input checksum, config checksum, and runtime parameters.

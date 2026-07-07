@@ -6,6 +6,7 @@ run:
   n_props: 200
   horizon_years: 20
   return_time_stats: true
+  age_transition_mode: annual_interpolated
 
 input:
   sheet: 0

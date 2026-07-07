@@ -598,11 +598,23 @@ def run_sim(
     return_time_stats: bool = False,
     prebuilt_schedule: Optional[List[TransitionSnapshot]] = None,
     verbose: bool = False,
-) -> Dict[str, float]:
+    return_first_occupancy: bool = False,
+) -> Dict[str, object]:
     """
     Run the Monte Carlo simulation over n_props dwellings.
 
     Returns a summary dict of probabilities (and optional time stats).
+
+    When return_first_occupancy is True, the result additionally contains a
+    "first_occupancy" entry with per-dwelling arrays (NaN where the event never
+    happens within the horizon):
+      - any_time / phys_time: years from build to the first time the dwelling is
+        occupied by a household with the category (0.0 = the first household
+        already has it at move-in)
+      - any_moved_in / phys_moved_in: True when the first such household already
+        had the condition when it moved in, False when a resident household
+        acquired it in place (at an ageing step or a calendar-trend step)
+    Tracking consumes no random draws, so all other outputs are unchanged.
     """
 
     if params.age_transition_mode not in AGE_TRANSITION_MODES:
@@ -676,6 +688,23 @@ def run_sim(
     ever_any = np.zeros(params.n_props, dtype=bool)
     ever_phys = np.zeros(params.n_props, dtype=bool)
 
+    first_any_time = np.full(params.n_props, np.nan)
+    first_phys_time = np.full(params.n_props, np.nan)
+    first_any_moved_in = np.zeros(params.n_props, dtype=bool)
+    first_phys_moved_in = np.zeros(params.n_props, dtype=bool)
+
+    def record_status(i: int, t: float, any_d: bool, phys_d: bool, moved_in: bool) -> None:
+        """Fold the household's current status into the dwelling-lifetime flags,
+        capturing the timing and mechanism of the first occurrence."""
+        if any_d and not ever_any[i]:
+            first_any_time[i] = t
+            first_any_moved_in[i] = moved_in
+        if phys_d and not ever_phys[i]:
+            first_phys_time[i] = t
+            first_phys_moved_in[i] = moved_in
+        ever_any[i] = ever_any[i] or any_d
+        ever_phys[i] = ever_phys[i] or phys_d
+
     time_any = np.zeros(params.n_props)
     time_phys = np.zeros(params.n_props)
     time_total = np.zeros(params.n_props)
@@ -711,8 +740,7 @@ def run_sim(
         else:
             any_d, phys_d = _seed_household_state(br, current_snapshot.profiles, rng)
 
-        ever_any[i] = ever_any[i] or any_d
-        ever_phys[i] = ever_phys[i] or phys_d
+        record_status(i, t, any_d, phys_d, moved_in=True)
 
         # Dwelling occupancy lifecycle
         while t < float(params.horizon_years):
@@ -760,8 +788,7 @@ def run_sim(
                         any_d,
                         phys_d,
                     )
-                    ever_any[i] = ever_any[i] or any_d
-                    ever_phys[i] = ever_phys[i] or phys_d
+                    record_status(i, t, any_d, phys_d, moved_in=False)
 
                 # If we've hit a bracket boundary, transition to next bracket and apply acquisitions.
                 # Calendar-time transitions are processed first when both happen at the same instant.
@@ -791,8 +818,7 @@ def run_sim(
                         )
                         br = next_br
                         yrs_to_boundary = width_map[br]  # now at the start of the new bracket
-                    ever_any[i] = ever_any[i] or any_d
-                    ever_phys[i] = ever_phys[i] or phys_d
+                    record_status(i, t, any_d, phys_d, moved_in=False)
 
             # Tenure ended -> household moves out -> new household moves in
             if t < float(params.horizon_years):
@@ -807,10 +833,9 @@ def run_sim(
                 else:
                     any_d, phys_d = _seed_household_state(br, current_snapshot.profiles, rng)
 
-                ever_any[i] = ever_any[i] or any_d
-                ever_phys[i] = ever_phys[i] or phys_d
+                record_status(i, t, any_d, phys_d, moved_in=True)
 
-    results: Dict[str, float] = {
+    results: Dict[str, object] = {
         "p_ever_any": float(ever_any.mean()),
         "p_ever_physical": float(ever_phys.mean()),
     }
@@ -822,5 +847,13 @@ def run_sim(
             "pct_time_any": float((time_any / denom).mean()),
             "pct_time_physical": float((time_phys / denom).mean()),
         })
+
+    if return_first_occupancy:
+        results["first_occupancy"] = {
+            "any_time": first_any_time,
+            "phys_time": first_phys_time,
+            "any_moved_in": first_any_moved_in,
+            "phys_moved_in": first_phys_moved_in,
+        }
 
     return results
