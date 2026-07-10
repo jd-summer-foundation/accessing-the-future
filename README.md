@@ -104,8 +104,8 @@ make smoke
 
 ## Reproducibility Notes
 
-- Fixed defaults for the baseline run live in [configs/baseline.yaml](configs/baseline.yaml): `seed=123`, `n_props=50000`, `horizon_years=20`, `start_year=2022` (the SDAC base year the trend projection is anchored to), `age_transition_mode=annual_interpolated`.
-- `age_transition_mode` selects how households acquire disability as they age. The canonical mode is `annual_interpolated`: acquisition is tested every year of age against prevalence linearly interpolated between bracket midpoints, and a new household's initial status is seeded from the interpolated rate at its exact age. The legacy `bracket_boundary` mode (kept for comparison in [configs/bracket_boundary.yaml](configs/bracket_boundary.yaml)) instead tests acquisition only when a household crosses into the next ten-year bracket.
+- Fixed defaults for the baseline run live in [configs/baseline.yaml](configs/baseline.yaml): `seed=123`, `n_props=50000`, `horizon_years=20`, `start_year=2022` (the SDAC base year the trend projection is anchored to).
+- Households age one year at a time. Disability acquisition is tested every year of age against prevalence linearly interpolated between bracket midpoint ages, and a new household's initial status is seeded from the interpolated rate at its exact age.
 - `make verify-data` checks the canonical raw workbooks listed in [data/checksums.sha256](data/checksums.sha256) before rebuilds.
 - The processed CSV is deterministic and is validated against the current raw-source derivation on every `make validate-data`.
 - The run manifest records commit hash, dependency versions, input checksum, config checksum, and runtime parameters.

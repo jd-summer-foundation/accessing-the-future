@@ -7,10 +7,9 @@ We simulate a dwelling being occupied by a sequence of households over a horizon
 Households:
 - enter with an initial age bracket (from an in-mover age distribution by default)
 - stay for a tenure duration drawn from an age-specific distribution
-- may age into older brackets during their tenure
-- acquire conditions as they age; in the default "annual_interpolated" mode this is
-  tested every year against prevalence linearly interpolated between bracket midpoints,
-  while the legacy "bracket_boundary" mode tests only at age-bracket boundaries
+- age one year at a time during their tenure
+- may acquire conditions with each year of age, tested against prevalence linearly
+  interpolated between bracket midpoint ages
 - once acquired, a condition persists for that household (no recovery modelled)
 
 Categories tracked (household-level):
@@ -32,7 +31,6 @@ import time
 
 BRACKETS: List[str] = ["15-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75+"]
 BRACKET_IDX = {b: i for i, b in enumerate(BRACKETS)}
-AGE_TRANSITION_MODES: Tuple[str, ...] = ("bracket_boundary", "annual_interpolated")
 BRACKET_START_AGES: Dict[str, int] = {
     "15-24": 15,
     "25-34": 25,
@@ -113,23 +111,18 @@ class SimParams:
 
     # If household currently has ANY/PHYSICAL, lengthen tenure by this factor (e.g. 1.2)
     disabled_tenure_factor: float = 1.0
-    age_transition_mode: str = "annual_interpolated"
 
 
 @dataclass(frozen=True)
 class Profiles:
-    """Prevalence profiles and acquisition probabilities for a rate set.
+    """Prevalence profiles for a rate set.
 
     - adj_any[b]: ANY prevalence per bracket, used as supplied (not forced monotone)
     - cond_phys[b]: P(motor_phys | any_dis) per bracket
-    - acq_any[(b0, b1)]: P(acquire ANY) at the b0 -> b1 age boundary
-    - acq_cond_phys[(b0, b1)]: P(acquire subtype | already ANY) at that boundary
     """
 
     adj_any: Dict[str, float]
     cond_phys: Dict[str, float]
-    acq_any: Dict[Tuple[str, str], float]
-    acq_cond_phys: Dict[Tuple[str, str], float]
 
 
 @dataclass(frozen=True)
@@ -180,22 +173,6 @@ def _acquire_prob(prev_rate: float, next_rate: float) -> float:
     return (nxt - prev) / (1.0 - prev)
 
 
-def _acquire_probs_from_adjusted(adjusted_rates: Dict[str, float]) -> Dict[Tuple[str, str], float]:
-    """
-    Given a prevalence profile across age brackets, compute per-transition
-    acquisition probabilities under persistence by applying _acquire_prob to each
-    b0 -> b1 bracket pair. Where prevalence declines between brackets the
-    acquisition probability is zero (conditions are never lost).
-    """
-    _validate_bracketed_dict("adjusted_rates", adjusted_rates)
-    return {
-        (BRACKETS[i], BRACKETS[i + 1]): _acquire_prob(
-            adjusted_rates[BRACKETS[i]], adjusted_rates[BRACKETS[i + 1]]
-        )
-        for i in range(len(BRACKETS) - 1)
-    }
-
-
 def _interpolate_bracket_rate(by_bracket: Dict[str, float], age: int) -> float:
     """Linearly interpolate the target prevalence between bracket midpoint ages."""
     _validate_bracketed_dict("by_bracket", by_bracket)
@@ -232,12 +209,9 @@ def _bracket_for_age(age: int) -> str:
 
 def make_profiles(all_rates: AllRates) -> Profiles:
     """
-    Build prevalence profiles and acquisition probabilities for:
+    Build prevalence profiles for:
 
       - ANY disability (base): used as supplied, without forcing monotonicity.
-        Where prevalence happens to fall between brackets (e.g. 15-24 -> 25-34
-        at the household level), the corresponding acquisition probability is
-        zero rather than negative, consistent with the no-recovery assumption.
       - motor_phys: conditional on ANY (subtype)
 
     See the Profiles dataclass for the returned fields.
@@ -263,18 +237,9 @@ def make_profiles(all_rates: AllRates) -> Profiles:
 
     cond_phys = build_cond_subtype(all_rates.motor_phys.by_bracket)
 
-    # Acquisition probs. The conditional subtype reuses the same persistence formula
-    # applied to P(subtype | any): when ANY is acquired at a boundary the subtype is
-    # seeded from cond[next]; when ANY is already present it can be acquired with
-    # probability _acquire_prob(cond[curr], cond[next]).
-    acq_any = _acquire_probs_from_adjusted(adj_any)
-    acq_cond_phys = _acquire_probs_from_adjusted(cond_phys)
-
     return Profiles(
         adj_any=adj_any,
         cond_phys=cond_phys,
-        acq_any=acq_any,
-        acq_cond_phys=acq_cond_phys,
     )
 
 
@@ -445,16 +410,6 @@ def _event_occurs(probability: float, rng: np.random.Generator) -> bool:
     return bool(rng.random() < prob)
 
 
-def _seed_household_state(
-    bracket: str,
-    profiles: Profiles,
-    rng: np.random.Generator,
-) -> Tuple[bool, bool]:
-    any_d = rng.random() < profiles.adj_any[bracket]
-    phys_d = rng.random() < profiles.cond_phys[bracket] if any_d else False
-    return any_d, phys_d
-
-
 def _seed_household_state_at_age(
     age: int,
     profiles: Profiles,
@@ -494,35 +449,6 @@ def _apply_time_step_transition(
                     next_profiles.cond_phys[bracket],
                 )
                 if _event_occurs(p_phys, rng):
-                    phys_d = True
-
-    return any_d, phys_d
-
-
-def _apply_age_boundary_transition(
-    bracket: str,
-    next_bracket: str,
-    profiles: Profiles,
-    rng: np.random.Generator,
-    any_d: bool,
-    phys_d: bool,
-) -> Tuple[bool, bool]:
-    became_any_now = False
-
-    if not any_d:
-        p_any = profiles.acq_any.get((bracket, next_bracket), 0.0)
-        if rng.random() < p_any:
-            any_d = True
-            became_any_now = True
-
-    if any_d:
-        if became_any_now:
-            if not phys_d and rng.random() < profiles.cond_phys[next_bracket]:
-                phys_d = True
-        else:
-            if not phys_d:
-                p_phys = profiles.acq_cond_phys.get((bracket, next_bracket), 0.0)
-                if rng.random() < p_phys:
                     phys_d = True
 
     return any_d, phys_d
@@ -607,12 +533,6 @@ def run_sim(
     Returns a summary dict of probabilities (and optional time stats).
     """
 
-    if params.age_transition_mode not in AGE_TRANSITION_MODES:
-        raise ValueError(
-            f"Unknown age_transition_mode {params.age_transition_mode!r}; "
-            f"supported: {AGE_TRANSITION_MODES}"
-        )
-
     rng = np.random.default_rng(params.seed)
 
     # Validate inputs
@@ -628,19 +548,7 @@ def run_sim(
         TransitionSnapshot(time_year=0.0, rates=rates, profiles=make_profiles(rates))
     ]
 
-    # Precompute bracket widths (years until next boundary, by current bracket)
-    width_map = {
-        "15-24": 10.0,
-        "25-34": 10.0,
-        "35-44": 10.0,
-        "45-54": 10.0,
-        "55-64": 10.0,
-        "65-74": 10.0,
-        "75+":   9999.0,  # terminal
-    }
-
     # Inclusive bracket bounds so we can randomise an in-mover's exact age within the bracket.
-    # For example, in "35-44" age could be 35..44; years-to-next-boundary would be 10..1 respectively.
     br_bounds = {
         "15-24": (15, 24),
         "25-34": (25, 34),
@@ -648,16 +556,8 @@ def run_sim(
         "45-54": (45, 54),
         "55-64": (55, 64),
         "65-74": (65, 74),
-        "75+":   (75, None),  # open-ended / terminal
+        "75+":   (75, None),  # open-ended
     }
-
-    def years_to_boundary_at_move_in(br: str) -> float:
-        """Years until ageing into the next bracket for a new in-mover household."""
-        lo, hi = br_bounds[br]
-        if hi is None:
-            return width_map[br]  # terminal
-        age = int(rng.integers(lo, hi + 1))  # uniform over inclusive ages in bracket
-        return float(hi - age + 1)           # e.g. 35->10 years; 44->1 year
 
     def sample_age_at_move_in(br: str) -> int:
         lo, hi = br_bounds[br]
@@ -703,15 +603,11 @@ def run_sim(
         transition_idx = 0
         current_snapshot = schedule[transition_idx]
         br = pick_first_bracket()
-        age_year = sample_age_at_move_in(br) if params.age_transition_mode == "annual_interpolated" else None
-        yrs_to_boundary = 1.0 if params.age_transition_mode == "annual_interpolated" else years_to_boundary_at_move_in(br)
+        age_year = sample_age_at_move_in(br)
+        yrs_to_birthday = 1.0
 
-        # Seed first household statuses from prevalence at starting bracket
-        if params.age_transition_mode == "annual_interpolated":
-            assert age_year is not None
-            any_d, phys_d = _seed_household_state_at_age(age_year, current_snapshot.profiles, rng)
-        else:
-            any_d, phys_d = _seed_household_state(br, current_snapshot.profiles, rng)
+        # Seed first household statuses from interpolated prevalence at exact age
+        any_d, phys_d = _seed_household_state_at_age(age_year, current_snapshot.profiles, rng)
 
         ever_any[i] = ever_any[i] or any_d
         ever_phys[i] = ever_phys[i] or phys_d
@@ -734,7 +630,7 @@ def run_sim(
                     if transition_idx + 1 < len(schedule)
                     else float("inf")
                 )
-                seg = min(remaining, yrs_to_boundary, next_transition_time - t, float(params.horizon_years) - t)
+                seg = min(remaining, yrs_to_birthday, next_transition_time - t, float(params.horizon_years) - t)
 
                 # accumulate time
                 time_total[i] += seg
@@ -745,10 +641,10 @@ def run_sim(
 
                 t += seg
                 remaining -= seg
-                yrs_to_boundary -= seg
+                yrs_to_birthday -= seg
 
                 hit_transition = next_transition_time < float("inf") and abs(t - next_transition_time) <= 1e-12
-                hit_age_boundary = yrs_to_boundary <= 1e-12
+                hit_birthday = yrs_to_birthday <= 1e-12
 
                 if hit_transition and t < float(params.horizon_years):
                     prev_profiles = current_snapshot.profiles
@@ -765,34 +661,19 @@ def run_sim(
                     ever_any[i] = ever_any[i] or any_d
                     ever_phys[i] = ever_phys[i] or phys_d
 
-                # If we've hit a bracket boundary, transition to next bracket and apply acquisitions.
+                # If the household has aged a year, apply the annual acquisition check.
                 # Calendar-time transitions are processed first when both happen at the same instant.
-                if hit_age_boundary and t < float(params.horizon_years):
-                    if params.age_transition_mode == "annual_interpolated":
-                        assert age_year is not None
-                        any_d, phys_d = _apply_annual_age_transition(
-                            age_year,
-                            current_snapshot.profiles,
-                            rng,
-                            any_d,
-                            phys_d,
-                        )
-                        age_year += 1
-                        br = _bracket_for_age(age_year)
-                        yrs_to_boundary = 1.0
-                    elif br != "75+":
-                        next_br = BRACKETS[BRACKET_IDX[br] + 1]
-
-                        any_d, phys_d = _apply_age_boundary_transition(
-                            br,
-                            next_br,
-                            current_snapshot.profiles,
-                            rng,
-                            any_d,
-                            phys_d,
-                        )
-                        br = next_br
-                        yrs_to_boundary = width_map[br]  # now at the start of the new bracket
+                if hit_birthday and t < float(params.horizon_years):
+                    any_d, phys_d = _apply_annual_age_transition(
+                        age_year,
+                        current_snapshot.profiles,
+                        rng,
+                        any_d,
+                        phys_d,
+                    )
+                    age_year += 1
+                    br = _bracket_for_age(age_year)
+                    yrs_to_birthday = 1.0
                     ever_any[i] = ever_any[i] or any_d
                     ever_phys[i] = ever_phys[i] or phys_d
 
@@ -800,14 +681,10 @@ def run_sim(
             if t < float(params.horizon_years):
                 # Subsequent households always use in-mover distribution
                 br = BRACKETS[_sample_from_cdf(inmover_cdf, rng)]
-                age_year = sample_age_at_move_in(br) if params.age_transition_mode == "annual_interpolated" else None
-                yrs_to_boundary = 1.0 if params.age_transition_mode == "annual_interpolated" else years_to_boundary_at_move_in(br)
+                age_year = sample_age_at_move_in(br)
+                yrs_to_birthday = 1.0
 
-                if params.age_transition_mode == "annual_interpolated":
-                    assert age_year is not None
-                    any_d, phys_d = _seed_household_state_at_age(age_year, current_snapshot.profiles, rng)
-                else:
-                    any_d, phys_d = _seed_household_state(br, current_snapshot.profiles, rng)
+                any_d, phys_d = _seed_household_state_at_age(age_year, current_snapshot.profiles, rng)
 
                 ever_any[i] = ever_any[i] or any_d
                 ever_phys[i] = ever_phys[i] or phys_d
