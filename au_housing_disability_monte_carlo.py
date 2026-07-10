@@ -8,7 +8,9 @@ Households:
 - enter with an initial age bracket (from an in-mover age distribution by default)
 - stay for a tenure duration drawn from an age-specific distribution
 - may age into older brackets during their tenure
-- can acquire conditions only at age-bracket boundaries
+- acquire conditions as they age; in the default "annual_interpolated" mode this is
+  tested every year against prevalence linearly interpolated between bracket midpoints,
+  while the legacy "bracket_boundary" mode tests only at age-bracket boundaries
 - once acquired, a condition persists for that household (no recovery modelled)
 
 Categories tracked (household-level):
@@ -111,7 +113,7 @@ class SimParams:
 
     # If household currently has ANY/PHYSICAL, lengthen tenure by this factor (e.g. 1.2)
     disabled_tenure_factor: float = 1.0
-    age_transition_mode: str = "bracket_boundary"
+    age_transition_mode: str = "annual_interpolated"
 
 
 @dataclass(frozen=True)

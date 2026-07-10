@@ -1,12 +1,16 @@
+# Comparison run using the legacy bracket-boundary age transitions, where
+# disability acquisition is tested only when a household ages into the next
+# ten-year bracket. The canonical run (configs/baseline.yaml) uses
+# annual_interpolated transitions.
 run:
-  name: annual_interpolated
+  name: bracket_boundary
   input_path: data/processed/model_inputs.csv
-  output_dir: results/annual_interpolated
+  output_dir: results/bracket_boundary
   seed: 123
   n_props: 50000
   horizon_years: 20
   return_time_stats: true
-  age_transition_mode: annual_interpolated
+  age_transition_mode: bracket_boundary
   start_year: 2022
 
 input:

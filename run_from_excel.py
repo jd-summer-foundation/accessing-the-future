@@ -143,7 +143,7 @@ def _build_runtime(args: argparse.Namespace) -> Dict[str, object]:
         "return_time_stats": bool(run_cfg.get("return_time_stats", True)),
         "scenarios": config.get("scenarios") or _default_scenarios(),
         "transition_model_config": config.get("transition_model"),
-        "age_transition_mode": str(run_cfg.get("age_transition_mode", "bracket_boundary")),
+        "age_transition_mode": str(run_cfg.get("age_transition_mode", "annual_interpolated")),
         "start_year": int(run_cfg.get("start_year", 2022)),
         "verbose": args.verbose,
         "cli_args": {key: value for key, value in vars(args).items() if value is not None and key != "verbose"},

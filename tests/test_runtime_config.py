@@ -59,14 +59,31 @@ run:
 
 
 def test_runtime_reads_age_transition_mode(tmp_path: Path) -> None:
-    config = tmp_path / "annual_mode.yaml"
+    config = tmp_path / "boundary_mode.yaml"
     config.write_text(
         """
 run:
-  name: annual_mode
+  name: boundary_mode
   seed: 123
   n_props: 10
-  age_transition_mode: annual_interpolated
+  age_transition_mode: bracket_boundary
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    runtime = _build_runtime(_args(config))
+
+    assert runtime["age_transition_mode"] == "bracket_boundary"
+
+
+def test_runtime_defaults_to_annual_interpolated_mode(tmp_path: Path) -> None:
+    config = tmp_path / "no_mode.yaml"
+    config.write_text(
+        """
+run:
+  name: no_mode
+  seed: 123
+  n_props: 10
 """.lstrip(),
         encoding="utf-8",
     )
