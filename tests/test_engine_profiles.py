@@ -20,7 +20,7 @@ def test_make_profiles_uses_any_rates_as_supplied_and_clips_conditionals() -> No
     assert all(0.0 <= profiles.cond_phys[bracket] <= 1.0 for bracket in eng.BRACKETS)
 
     # A declining ANY step yields zero acquisition probability (no recovery).
-    assert profiles.acq_any[("15-24", "25-34")] == 0.0
+    assert eng._acquire_prob(any_rates["15-24"], any_rates["25-34"]) == 0.0
 
 
 def test_interpolate_bracket_rate_varies_linearly_by_age() -> None:

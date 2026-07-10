@@ -6,7 +6,6 @@ run:
   n_props: 50000
   horizon_years: 20
   return_time_stats: true
-  age_transition_mode: annual_interpolated
   start_year: 2022
 
 input:
