@@ -6,6 +6,7 @@ run:
   n_props: 200
   horizon_years: 20
   return_time_stats: true
+  return_first_occupancy: true
 
 input:
   sheet: 0

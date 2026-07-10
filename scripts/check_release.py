@@ -19,15 +19,21 @@ if str(ROOT) not in sys.path:
 
 EXPECTED_BASELINE_ARTIFACTS = [
     "results/baseline/scenario_summaries.csv",
+    "results/baseline/first_occupancy_cdf.csv",
     "results/baseline/inputs_used.csv",
     "results/baseline/profiles_used.csv",
     "results/baseline/run_manifest.json",
     "reports/tables/table_01_scenario_summary.csv",
     "reports/tables/table_01_scenario_summary.md",
+    "reports/tables/retrofit_vs_newbuild_summary.csv",
+    "reports/tables/retrofit_vs_newbuild_summary.md",
+    "reports/tables/retrofit_vs_newbuild_cashflows.csv",
     "reports/figures/figure_01_ever_probabilities.png",
     "reports/figures/figure_02_time_share.png",
     "reports/manifest.json",
+    "reports/cost_analysis_manifest.json",
     "data/checksums.sha256",
+    "data/processed/construction_index.csv",
     "CITATION.cff",
     ".zenodo.json",
 ]
@@ -125,8 +131,8 @@ def validate_release(repo_root: Path) -> None:
 
     if isinstance(baseline_outputs, dict):
         checksums = baseline_outputs.get("artifact_checksums", {})
-        expected_output_keys = ["inputs_used.csv", "profiles_used.csv", "scenario_summaries.csv"]
-        _ensure(sorted(checksums.keys()) == expected_output_keys, "Baseline run manifest must checksum the three canonical run artifacts", failures)
+        expected_output_keys = ["first_occupancy_cdf.csv", "inputs_used.csv", "profiles_used.csv", "scenario_summaries.csv"]
+        _ensure(sorted(checksums.keys()) == expected_output_keys, "Baseline run manifest must checksum the four canonical run artifacts", failures)
     else:
         failures.append("Baseline run manifest outputs section must be a mapping")
 

@@ -1,0 +1,46 @@
+# Retrofit vs. accessible-new-build cost comparison.
+#
+# Compares, for the projected NSW and WA new-home builds, the NPV of:
+#   (a) building every new home accessible up front, vs
+#   (b) retrofitting each home when it is first occupied by a household with a
+#       (physical / any) disability, using the model's first-occupancy CDF.
+# See docs/cost_analysis.md for the full methodology.
+
+costs:
+  # Per-dwelling costs in nominal dollars of `base_year`, from the Centre for
+  # International Economics Decision Regulation Impact Statement (CIE DRIS) on
+  # minimum accessibility standards in the National Construction Code.
+  base_year: 2021
+  new_build_per_dwelling: 4000
+  retrofit_per_dwelling: 19000
+
+analysis:
+  # NPV reference year. Costs are anchored to the March-quarter construction
+  # index of this year (the last observed quarter) and inflated forward at the
+  # state-specific historical average rate.
+  start_year: 2026
+  # New homes are assumed built in equal annual cohorts over this many years,
+  # starting in start_year.
+  buildout_years: 5
+  # Nominal discount rate: approximate 10-year Australian government bond yield.
+  discount_rate: 0.048
+  # Forward construction cost inflation = average year-on-year change of the
+  # March-quarter house construction index over these years (inclusive; the
+  # first entry is the change ending in that year). 2000-2019 deliberately
+  # excludes the COVID-era spike.
+  inflation_window: [2000, 2019]
+  # Stagger each build cohort's first-occupancy clock by its build year so the
+  # retrofit arm is treated symmetrically with the build-out of the new-build
+  # arm. Disable (or run with --no-stagger) to reproduce the original
+  # spreadsheet, which started every home's retrofit clock in start_year.
+  stagger_by_cohort: true
+  # Model scenario whose first-occupancy CDF feeds the retrofit arm.
+  scenario: main_inmover_first
+
+# Projected new homes over the build-out period, from the National Housing
+# Accord state breakdown.
+states:
+  nsw:
+    new_homes: 376000
+  wa:
+    new_homes: 129000

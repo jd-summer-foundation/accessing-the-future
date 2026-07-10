@@ -6,6 +6,7 @@ run:
   n_props: 50000
   horizon_years: 20
   return_time_stats: true
+  return_first_occupancy: true
   start_year: 2022
 
 input:

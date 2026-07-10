@@ -43,9 +43,11 @@ That command will:
 make verify-data
 make build-data
 make validate-data
+make construction-index
 make run-baseline
 make report
 make manuscript
+make cost-analysis
 make reproduce
 make release-check
 ```
@@ -80,18 +82,24 @@ make smoke
 - Raw source workbook: [data/raw/sdac22_household_disability.xlsx](data/raw/sdac22_household_disability.xlsx)
 - Raw housing mobility workbook: [data/raw/2. Housing mobility.xlsx](data/raw/2.%20Housing%20mobility.xlsx)
 - SDAC time-series data cube: [data/raw/SDACDC01.xlsx](data/raw/SDACDC01.xlsx) — historical disability proportions by age for 2003–2022 (Table 1.3) and population weights (Table 3.1), used to compute annual increments for the trend scenarios
+- Producer Price Indexes workbook: [data/raw/6427017.xlsx](data/raw/6427017.xlsx) — ABS 6427.0 Table 17 house-construction indexes for NSW and WA, used by the retrofit cost analysis
 - Version-controlled derivation rules: [configs/derivation.yaml](configs/derivation.yaml)
 - Version-controlled scenario definitions: [configs/baseline.yaml](configs/baseline.yaml)
+- Version-controlled cost assumptions: [configs/cost_analysis.yaml](configs/cost_analysis.yaml)
 
 ### Process
 - [scripts/build_model_inputs.py](scripts/build_model_inputs.py) extracts disability prevalence, margin-of-error bounds, and household totals from SDAC22, tenure distributions from Housing Mobility Table 2.2, and derives the in-mover distribution from raw `<1 year` tenure counts by age.
 - [run_from_excel.py](run_from_excel.py) reads `data/processed/model_inputs.csv`, normalizes distributions, projects disability rates forward under the configured trend (see [Time-Varying Disability Rates](#time-varying-disability-rates)), expands each configured scenario into low/base/high confidence-bound cases when MoE inputs are available, and writes run manifests.
 - [scripts/generate_reports.py](scripts/generate_reports.py) converts scenario summaries into one table and two figures.
 - [scripts/manuscript_figures.py](scripts/manuscript_figures.py) produces the paper-facing Table 1 and Figures 1-2 (base estimate with low/high error bars per scenario) into `reports/manuscript/`.
+- [scripts/build_construction_index.py](scripts/build_construction_index.py) extracts the NSW/WA house-construction cost index from the PPI workbook.
+- [scripts/retrofit_cost_analysis.py](scripts/retrofit_cost_analysis.py) compares the NPV of building all new homes accessible against retrofitting on first occupancy by a household with disability, using the model's first-occupancy CDF (see [docs/cost_analysis.md](docs/cost_analysis.md)).
 
 ### Outputs
 - `data/processed/model_inputs.csv`
+- `data/processed/construction_index.csv`
 - `results/<run_name>/scenario_summaries.csv`
+- `results/<run_name>/first_occupancy_cdf.csv` — cumulative share of dwellings first occupied by a household with a physical/any disability, by year since build
 - `results/<run_name>/inputs_used.csv`
 - `results/<run_name>/profiles_used.csv`
 - `results/<run_name>/run_manifest.json`
@@ -101,6 +109,7 @@ make smoke
 - `reports/figures/figure_02_time_share.png`
 - `reports/manuscript/table_scenario_summary.{csv,md}` (paper Table 1)
 - `reports/manuscript/figure_01_ever_probabilities.png`, `reports/manuscript/figure_02_time_share.png` (paper Figures 1-2)
+- `reports/tables/retrofit_vs_newbuild_summary.{csv,md}` and `reports/tables/retrofit_vs_newbuild_cashflows.csv` — retrofit vs. accessible-new-build NPV comparison ([docs/cost_analysis.md](docs/cost_analysis.md))
 
 ## Reproducibility Notes
 

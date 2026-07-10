@@ -19,6 +19,8 @@ Categories tracked (household-level):
 Outputs (summary dict):
 - p_ever_any, p_ever_physical
 - optionally: mean % of time a dwelling is occupied by a household with each category
+- optionally: first-occupancy CDFs (share of dwellings first occupied by a household
+  with each category by year y, for y = 0..horizon_years)
 """
 
 from __future__ import annotations
@@ -524,13 +526,22 @@ def run_sim(
     tenure: TenureDist,
     inmovers: InMoverDist,
     return_time_stats: bool = False,
+    return_first_occupancy: bool = False,
     prebuilt_schedule: Optional[List[TransitionSnapshot]] = None,
     verbose: bool = False,
-) -> Dict[str, float]:
+) -> Dict[str, object]:
     """
     Run the Monte Carlo simulation over n_props dwellings.
 
     Returns a summary dict of probabilities (and optional time stats).
+
+    When return_first_occupancy is set, the dict also contains
+    "first_occupancy_cdf_any" / "first_occupancy_cdf_physical": lists of length
+    horizon_years + 1 where entry y is the share of dwellings first occupied by
+    a household with that category at time <= y years (year 0 = the dwelling's
+    first household already has the category at move-in). The final entry
+    equals p_ever_* by construction. Tracking first-occupancy times draws no
+    random numbers, so enabling it leaves all other outputs unchanged.
     """
 
     rng = np.random.default_rng(params.seed)
@@ -578,6 +589,19 @@ def run_sim(
     ever_any = np.zeros(params.n_props, dtype=bool)
     ever_phys = np.zeros(params.n_props, dtype=bool)
 
+    # Time (in years since simulation start) at which each dwelling is first
+    # occupied by a household with the category; +inf if never within horizon.
+    first_any_time = np.full(params.n_props, np.inf)
+    first_phys_time = np.full(params.n_props, np.inf)
+
+    def note_occupancy_state(i: int, t: float, any_d: bool, phys_d: bool) -> None:
+        if any_d and not ever_any[i]:
+            ever_any[i] = True
+            first_any_time[i] = t
+        if phys_d and not ever_phys[i]:
+            ever_phys[i] = True
+            first_phys_time[i] = t
+
     time_any = np.zeros(params.n_props)
     time_phys = np.zeros(params.n_props)
     time_total = np.zeros(params.n_props)
@@ -609,8 +633,7 @@ def run_sim(
         # Seed first household statuses from interpolated prevalence at exact age
         any_d, phys_d = _seed_household_state_at_age(age_year, current_snapshot.profiles, rng)
 
-        ever_any[i] = ever_any[i] or any_d
-        ever_phys[i] = ever_phys[i] or phys_d
+        note_occupancy_state(i, t, any_d, phys_d)
 
         # Dwelling occupancy lifecycle
         while t < float(params.horizon_years):
@@ -658,8 +681,7 @@ def run_sim(
                         any_d,
                         phys_d,
                     )
-                    ever_any[i] = ever_any[i] or any_d
-                    ever_phys[i] = ever_phys[i] or phys_d
+                    note_occupancy_state(i, t, any_d, phys_d)
 
                 # If the household has aged a year, apply the annual acquisition check.
                 # Calendar-time transitions are processed first when both happen at the same instant.
@@ -674,8 +696,7 @@ def run_sim(
                     age_year += 1
                     br = _bracket_for_age(age_year)
                     yrs_to_birthday = 1.0
-                    ever_any[i] = ever_any[i] or any_d
-                    ever_phys[i] = ever_phys[i] or phys_d
+                    note_occupancy_state(i, t, any_d, phys_d)
 
             # Tenure ended -> household moves out -> new household moves in
             if t < float(params.horizon_years):
@@ -686,10 +707,9 @@ def run_sim(
 
                 any_d, phys_d = _seed_household_state_at_age(age_year, current_snapshot.profiles, rng)
 
-                ever_any[i] = ever_any[i] or any_d
-                ever_phys[i] = ever_phys[i] or phys_d
+                note_occupancy_state(i, t, any_d, phys_d)
 
-    results: Dict[str, float] = {
+    results: Dict[str, object] = {
         "p_ever_any": float(ever_any.mean()),
         "p_ever_physical": float(ever_phys.mean()),
     }
@@ -700,6 +720,13 @@ def run_sim(
         results.update({
             "pct_time_any": float((time_any / denom).mean()),
             "pct_time_physical": float((time_phys / denom).mean()),
+        })
+
+    if return_first_occupancy:
+        years = range(int(params.horizon_years) + 1)
+        results.update({
+            "first_occupancy_cdf_any": [float((first_any_time <= y).mean()) for y in years],
+            "first_occupancy_cdf_physical": [float((first_phys_time <= y).mean()) for y in years],
         })
 
     return results
