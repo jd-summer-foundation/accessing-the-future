@@ -54,6 +54,16 @@ DEFAULT_RAW_WORKBOOK = REPO_ROOT / "data/raw/sdac22_household_disability.xlsx"
 DEFAULT_HOUSING_MOBILITY_WORKBOOK = REPO_ROOT / "data/raw/2. Housing mobility.xlsx"
 DEFAULT_SDACDC01_XLSX = REPO_ROOT / "data/raw/SDACDC01.xlsx"
 DEFAULT_MODEL_INPUT_CSV = REPO_ROOT / "data/processed/model_inputs.csv"
+
+# ABS 6427.0 Producer Price Indexes, Table 17 (Output of the Construction
+# industries): class 3011 "House construction" index numbers, March quarters.
+DEFAULT_PPI_WORKBOOK = REPO_ROOT / "data/raw/6427017.xlsx"
+DEFAULT_CONSTRUCTION_INDEX_CSV = REPO_ROOT / "data/processed/construction_index.csv"
+PPI_SERIES_IDS = {
+    "nsw": "A2333673T",  # Index Number ; 3011 House construction New South Wales
+    "wa": "A2333757A",   # Index Number ; 3011 House construction Western Australia
+}
+CONSTRUCTION_INDEX_COLUMNS = ["year", "nsw_index", "wa_index"]
 DEFAULT_DERIVATION_CONFIG = REPO_ROOT / "configs/derivation.yaml"
 DEFAULT_BASELINE_CONFIG = REPO_ROOT / "configs/baseline.yaml"
 DEFAULT_SMOKE_CONFIG = REPO_ROOT / "configs/smoke.yaml"

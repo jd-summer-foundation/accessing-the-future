@@ -5,6 +5,7 @@
 - [data/raw/sdac22_household_disability.xlsx](raw/sdac22_household_disability.xlsx), an ABS SDAC22 extract containing household-level disability and physical long-term health condition tables by age of the household responsible adult.
 - [data/raw/2. Housing mobility.xlsx](raw/2.%20Housing%20mobility.xlsx), an ABS Housing Mobility and Conditions extract containing age-specific length-of-time-in-dwelling profiles. This workbook is downloadable from the ABS release page [Housing Mobility and Conditions, latest release](https://www.abs.gov.au/statistics/people/housing/housing-mobility-and-conditions/latest-release#data-downloads), under the data cube name `2. Housing mobility.xlsx`.
 - [data/raw/SDACDC01.xlsx](raw/SDACDC01.xlsx), an ABS SDAC time-series data cube containing "any disability" proportions by age for survey years 2003, 2009, 2012, 2015, 2018, and 2022 (Table 1.3, "all persons"), and population estimates by fine-grained age group (Table 3.1 Estimates, column L, rows 43–54).
+- [data/raw/6427017.xlsx](raw/6427017.xlsx), Table 17 of ABS 6427.0 Producer Price Indexes, Australia ("Output of the Construction industries, subdivision and class index numbers"), downloadable from the ABS release page [Producer Price Indexes, Australia](https://www.abs.gov.au/statistics/economy/price-indexes-and-inflation/producer-price-indexes-australia/latest-release). Used only by the retrofit cost analysis.
 
 ## Derived directly from SDAC22
 
@@ -38,6 +39,10 @@ These rates are **person-level** disability prevalence and are used to compute t
 
 - **`sdac_2003_2022_trend`**: uses survey years 2003 and 2022; annual increment = (2022 rate − 2003 rate) / 19.
 - **`sdac_2015_2022_trend`**: uses survey years 2015 and 2022; annual increment = (2022 rate − 2015 rate) / 7. Uses the same population-weighted age-bracket aggregation and the same relative-scaling method for `motor_phys` as the 2003–2022 scenario, but over the shorter seven-year window.
+
+## Derived from 6427017.xlsx (Producer Price Indexes Table 17)
+
+[data/processed/construction_index.csv](processed/construction_index.csv) is built by `scripts/build_construction_index.py` from the `Data1` sheet of the raw workbook. It keeps the "3011 House construction" index-number series for New South Wales (ABS series ID `A2333673T`) and Western Australia (`A2333757A`), selected by series ID so the extraction is robust to column order, and retains the March quarter of each year as that year's index level (columns `year`, `nsw_index`, `wa_index`). Years before both state series begin (March 1999) are dropped. The retrofit cost analysis (`scripts/retrofit_cost_analysis.py`; methodology in [docs/cost_analysis.md](../docs/cost_analysis.md)) uses this index to anchor the 2021 per-dwelling costs to observed price levels and to set state-specific forward inflation. `make construction-index` rebuilds the CSV from the raw workbook.
 
 ## Validation
 

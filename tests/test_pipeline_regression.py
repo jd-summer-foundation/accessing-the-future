@@ -66,6 +66,7 @@ def test_baseline_regression_matches_expected_fixture(tmp_path: Path) -> None:
     assert manifest["config"]["path"] == "configs/baseline.yaml"
     assert manifest["outputs"]["scenario_summaries"]["path"] == "scenario_summaries.csv"
     assert sorted(manifest["outputs"]["artifact_checksums"].keys()) == [
+        "first_occupancy_cdf.csv",
         "inputs_used.csv",
         "profiles_used.csv",
         "scenario_summaries.csv",

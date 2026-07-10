@@ -141,6 +141,7 @@ def _build_runtime(args: argparse.Namespace) -> Dict[str, object]:
         if args.horizon_years is not None
         else int(run_cfg.get("horizon_years", eng.DEFAULT_HORIZON_YEARS)),
         "return_time_stats": bool(run_cfg.get("return_time_stats", True)),
+        "return_first_occupancy": bool(run_cfg.get("return_first_occupancy", False)),
         "scenarios": config.get("scenarios") or _default_scenarios(),
         "transition_model_config": config.get("transition_model"),
         "start_year": int(run_cfg.get("start_year", 2022)),
@@ -319,6 +320,8 @@ def _write_manifest(runtime: Dict[str, object], scenario_summaries: pd.DataFrame
         Path(output_dir) / "inputs_used.csv",
         Path(output_dir) / "profiles_used.csv",
     ]
+    if runtime["return_first_occupancy"]:
+        output_paths.append(Path(output_dir) / "first_occupancy_cdf.csv")
 
     manifest = {
         "generated_at_utc": utc_now_iso(),
@@ -342,6 +345,7 @@ def _write_manifest(runtime: Dict[str, object], scenario_summaries: pd.DataFrame
             "seed": runtime["seed"],
             "horizon_years": runtime["horizon_years"],
             "return_time_stats": runtime["return_time_stats"],
+            "return_first_occupancy": runtime["return_first_occupancy"],
         },
         "cli_overrides": runtime["cli_args"],
         "scenarios": serialise_for_json(runtime["scenarios"]),
@@ -389,6 +393,7 @@ def main() -> None:
     historical_any = _extract_survey_rates_any(df_raw, HIST_SURVEY_YEARS)
 
     summaries = []
+    first_occupancy_rows = []
     resolved_scenarios = []
     for scenario in runtime["scenarios"]:
         if not isinstance(scenario, dict):
@@ -442,9 +447,24 @@ def main() -> None:
                 prepared["tenure"],
                 prepared["inmovers"],
                 return_time_stats=bool(runtime["return_time_stats"]),
+                return_first_occupancy=bool(runtime["return_first_occupancy"]),
                 prebuilt_schedule=prebuilt,
                 verbose=bool(runtime["verbose"]),
             )
+            for category in ("any", "physical"):
+                cdf = summary.pop(f"first_occupancy_cdf_{category}", None)
+                if cdf is None:
+                    continue
+                first_occupancy_rows.extend(
+                    {
+                        "scenario": output_scenario_name,
+                        "uncertainty_case": uncertainty_case,
+                        "category": category,
+                        "year": year,
+                        "cum_share_first_occupancy": share,
+                    }
+                    for year, share in enumerate(cdf)
+                )
             summaries.append({
                 "scenario": output_scenario_name,
                 "uncertainty_case": uncertainty_case,
@@ -466,6 +486,8 @@ def main() -> None:
 
     summary_df = pd.DataFrame(summaries)
     summary_df.to_csv(output_dir / "scenario_summaries.csv", index=False)
+    if runtime["return_first_occupancy"]:
+        pd.DataFrame(first_occupancy_rows).to_csv(output_dir / "first_occupancy_cdf.csv", index=False)
     runtime["resolved_scenarios"] = resolved_scenarios
     _write_manifest(runtime, summary_df)
 

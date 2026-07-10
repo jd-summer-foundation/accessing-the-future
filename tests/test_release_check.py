@@ -64,12 +64,18 @@ def _make_minimal_release_repo(tmp_path: Path) -> Path:
     _write_text(repo / "data/checksums.sha256", "abc\n")
     for relative_path in [
         "results/baseline/scenario_summaries.csv",
+        "results/baseline/first_occupancy_cdf.csv",
         "results/baseline/inputs_used.csv",
         "results/baseline/profiles_used.csv",
         "reports/tables/table_01_scenario_summary.csv",
         "reports/tables/table_01_scenario_summary.md",
+        "reports/tables/retrofit_vs_newbuild_summary.csv",
+        "reports/tables/retrofit_vs_newbuild_summary.md",
+        "reports/tables/retrofit_vs_newbuild_cashflows.csv",
+        "reports/cost_analysis_manifest.json",
         "reports/figures/figure_01_ever_probabilities.png",
         "reports/figures/figure_02_time_share.png",
+        "data/processed/construction_index.csv",
     ]:
         _write_text(repo / relative_path, "artifact\n")
     _write_json(
@@ -79,9 +85,10 @@ def _make_minimal_release_repo(tmp_path: Path) -> Path:
             "config": {"path": "configs/baseline.yaml"},
             "outputs": {
                 "artifact_checksums": {
-                    "inputs_used.csv": "a",
-                    "profiles_used.csv": "b",
-                    "scenario_summaries.csv": "c",
+                    "first_occupancy_cdf.csv": "a",
+                    "inputs_used.csv": "b",
+                    "profiles_used.csv": "c",
+                    "scenario_summaries.csv": "d",
                 }
             },
         },
