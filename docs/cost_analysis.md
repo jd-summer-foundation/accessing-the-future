@@ -103,9 +103,7 @@ For each state, uncertainty case (low/base/high) and category (physical/any):
    new-dwelling structure-type mix (house/townhouse/apartment commencement
    shares from ABS 8752.0, most recent 12 quarters), and the mandate overhead
    is added to the new-build arm. Houses and townhouses take the Class 1a
-   retrofit cost; apartments the Class 2 cost. A flat legacy mode
-   (`new_build_per_dwelling` / `retrofit_per_dwelling`) reproduces the
-   prototype spreadsheet's single $4,000/$19,000 figures.
+   retrofit cost; apartments the Class 2 cost.
 1. **Forward inflation** is the average year-on-year change of the state's
    March-quarter house construction index over 2000–2019. The window
    deliberately stops before the COVID-era spike (2021–2024 saw rises of up to
@@ -121,10 +119,8 @@ For each state, uncertainty case (low/base/high) and category (physical/any):
 5. **Retrofit arm**: a home built in year *b* incurs the retrofit cost in year
    *b + k* with probability equal to the CDF increment at year *k* (year 0 =
    the home's first household already includes a person with the disability).
-   Cohort staggering (`analysis.stagger_by_cohort`) treats the retrofit clock
-   symmetrically with the build-out; the `--no-stagger` flag reverts to the
-   prototype spreadsheet's simplification of starting every home's clock in
-   2026, and exists for cross-checking against it.
+   Each cohort's retrofit clock starts in its build year, so the retrofit arm
+   is treated symmetrically with the build-out of the new-build arm.
 6. **Discounting**: all expected nominal costs are discounted to 2026 at 4.8%
    (approximate 10-year Australian government bond yield). Both the costs and
    the discount rate are nominal, so the comparison is internally consistent.
@@ -157,26 +153,3 @@ For each state, uncertainty case (low/base/high) and category (physical/any):
 - The headline comparison uses the **base / physical** case: retrofit need is
   driven by physical disability, with the `any`-disability columns as an upper
   bracket.
-
-## Differences from the prototype spreadsheet
-
-This analysis reproduces the prototype workbook ("Projected costs of retrofit
-vs initial build 2.0") and then deliberately departs from it in four ways.
-With `--no-stagger` and the legacy flat costs ($4,000/$19,000), NSW figures
-match the workbook exactly except for (2)
-(see `tests/test_retrofit_cost_analysis.py`):
-
-1. **Cohort staggering** (default on): the workbook spread new-build costs
-   over the 5-year build-out but started every home's retrofit clock in 2026,
-   as if all homes existed on day one. Staggering delays each cohort's
-   retrofit exposure to its build year.
-2. **Full CDF horizon**: the workbook's projection rows stopped 20 years after
-   2026, silently dropping the year-20 CDF increment; the script uses the full
-   0–20 CDF.
-3. **WA inflation fix**: the workbook inflated WA costs at the NSW rate from
-   2028 onward (a copy error); the script uses each state's own rate, so WA
-   figures are somewhat higher than the workbook's.
-4. **Mix-weighted per-state costs**: the workbook used flat $4,000/$19,000
-   for both states; the default config weights the CIE DRIS per-type costs by
-   each state's dwelling mix and adds the mandate overhead to the new-build
-   arm (see [What the cost figures represent](#what-the-cost-figures-represent)).

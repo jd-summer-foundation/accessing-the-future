@@ -1,43 +1,50 @@
-"""Cross-checks of the cost engine against the original prototype spreadsheet.
+"""Engine checks for the retrofit vs. accessible-new-build cost comparison.
 
-The fixture tests/fixtures/spreadsheet_first_occupancy_cdf.csv contains the
-first-occupancy CDF exactly as used in the prototype workbook
-"Projected costs of retrofit vs initial build 2.0", so the expected values
-below are the workbook's own outputs. Two deliberate differences from the
-workbook are covered:
-
-- the workbook's projection rows stop 20 years after the analysis start, so
-  the year-20 CDF increment is silently dropped; the script uses the full CDF.
-  The exact cross-check therefore clamps the fixture's year-20 value.
-- the workbook inflated WA costs with the NSW rate from 2028 onward (copy
-  error); the script uses each state's own rate, so only NSW figures are
-  compared against the workbook.
+These tests exercise the cost engine with synthetic first-occupancy CDFs whose
+NPVs can be reasoned about (or computed) directly in the test, plus the
+resolution of per-state costs from the CIE DRIS per-type figures and the ABS
+dwelling mix.
 """
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from scripts.pipeline_utils import DEFAULT_CONSTRUCTION_INDEX_CSV, DEFAULT_DWELLING_MIX_CSV, load_yaml
-from scripts.retrofit_cost_analysis import DEFAULT_COST_CONFIG, resolve_state_costs, run_cost_analysis
+from scripts.retrofit_cost_analysis import (
+    DEFAULT_COST_CONFIG,
+    average_inflation,
+    resolve_state_costs,
+    run_cost_analysis,
+)
 
-ROOT = Path(__file__).resolve().parents[1]
-SPREADSHEET_CDF = ROOT / "tests/fixtures/spreadsheet_first_occupancy_cdf.csv"
+UNCERTAINTY_CASES = ["low", "base", "high"]
+CATEGORIES = ["physical", "any"]
+HORIZON = 20
 
 
 @pytest.fixture(scope="module")
 def config() -> dict:
-    """The prototype workbook's flat cost assumptions ($4k/$19k for every state).
+    return load_yaml(DEFAULT_COST_CONFIG)
 
-    The workbook cross-check expectations below were produced with these flat
-    costs, so the engine-mechanics tests pin them via the legacy cost mode
-    rather than the per-type/mix-weighted costs the default config now uses.
-    """
-    cfg = load_yaml(DEFAULT_COST_CONFIG)
-    cfg = {**cfg, "costs": {"base_year": cfg["costs"]["base_year"], "new_build_per_dwelling": 4000, "retrofit_per_dwelling": 19000}}
-    cfg.pop("dwelling_mix_csv", None)
-    return cfg
+
+def _synthetic_cdf(scenario: str, cdf_values: np.ndarray) -> pd.DataFrame:
+    """A first-occupancy CDF file with the same curve for every case/category."""
+    rows = []
+    for case in UNCERTAINTY_CASES:
+        for category in CATEGORIES:
+            for year, value in enumerate(cdf_values):
+                rows.append(
+                    {
+                        "scenario": f"{scenario}_{case}",
+                        "category": category,
+                        "year": year,
+                        "cum_share_first_occupancy": value,
+                    }
+                )
+    return pd.DataFrame(rows)
 
 
 def _results_dir_with_cdf(tmp_path: Path, cdf: pd.DataFrame) -> Path:
@@ -45,18 +52,6 @@ def _results_dir_with_cdf(tmp_path: Path, cdf: pd.DataFrame) -> Path:
     results_dir.mkdir()
     cdf.to_csv(results_dir / "first_occupancy_cdf.csv", index=False)
     return results_dir
-
-
-def _clamp_year20(cdf: pd.DataFrame) -> pd.DataFrame:
-    """Zero the year-20 increment to mimic the workbook's truncated projection rows."""
-    out = cdf.copy()
-    year19 = out.loc[out["year"] == 19].set_index(["scenario", "category"])["cum_share_first_occupancy"]
-    mask = out["year"] == 20
-    out.loc[mask, "cum_share_first_occupancy"] = [
-        year19[(scenario, category)]
-        for scenario, category in zip(out.loc[mask, "scenario"], out.loc[mask, "category"])
-    ]
-    return out
 
 
 def _summary_row(summary: pd.DataFrame, state: str, case: str, category: str) -> pd.Series:
@@ -91,87 +86,72 @@ def test_state_costs_weight_cie_dris_by_dwelling_mix() -> None:
     assert resolved["wa"]["retrofit"] == pytest.approx(18950.2, abs=0.5)
 
 
-def test_flat_and_by_type_cost_modes_are_exclusive() -> None:
+def test_by_type_costs_require_dwelling_mix() -> None:
     cfg = load_yaml(DEFAULT_COST_CONFIG)
-    mixed = {**cfg["costs"], "new_build_per_dwelling": 4000}
-    with pytest.raises(ValueError, match="one mode only"):
-        resolve_state_costs(mixed, ["nsw"], DEFAULT_DWELLING_MIX_CSV)
-    by_type_only = {key: value for key, value in cfg["costs"].items()}
     with pytest.raises(ValueError, match="dwelling mix"):
-        resolve_state_costs(by_type_only, ["nsw"], None)
+        resolve_state_costs(cfg["costs"], ["nsw"], None)
 
 
-def test_nsw_no_stagger_matches_spreadsheet_exactly(tmp_path: Path, config: dict) -> None:
-    cdf = _clamp_year20(pd.read_csv(SPREADSHEET_CDF))
+def test_immediate_occupancy_makes_arms_equal_when_costs_match(tmp_path: Path, config: dict) -> None:
+    """If every home is first occupied by a triggering household in its build
+    year (CDF = 1 at year 0) and the retrofit cost equals the new-build cost,
+    the two arms must produce identical NPVs: the cohort staggering treats
+    both arms symmetrically."""
+    cfg = {**config, "costs": dict(config["costs"])}
+    cfg["costs"]["new_build_by_type"] = {"house": 1000, "townhouse": 1000, "apartment": 1000}
+    cfg["costs"]["retrofit_by_type"] = {"house": 1000, "townhouse": 1000, "apartment": 1000}
+    cfg["costs"]["new_build_mandate_overhead"] = 0
+
+    cdf = _synthetic_cdf(str(config["analysis"]["scenario"]), np.ones(HORIZON + 1))
     results_dir = _results_dir_with_cdf(tmp_path, cdf)
-    outputs = run_cost_analysis(config, results_dir, DEFAULT_CONSTRUCTION_INDEX_CSV, stagger_override=False)
-    summary = outputs["summary"]
-
-    # Workbook Projection!I8/I7 (per-dwelling and total NPV of the new-build arm).
-    nsw_base_physical = _summary_row(summary, "nsw", "base", "physical")
-    assert nsw_base_physical["new_build_npv_per_dwelling"] == pytest.approx(5423.637416158001, rel=1e-12)
-    assert nsw_base_physical["new_build_npv_total_billion"] == pytest.approx(2.039287668475408, rel=1e-12)
-
-    # Workbook Projection!J8..O8 (per-dwelling retrofit NPV per case/category).
-    expected_retrofit = {
-        ("low", "physical"): 16816.05116012252,
-        ("low", "any"): 19444.19020375241,
-        ("base", "physical"): 17739.07104595847,
-        ("base", "any"): 20144.627684577594,
-        ("high", "physical"): 18488.397139705074,
-        ("high", "any"): 20768.363825737066,
-    }
-    for (case, category), expected in expected_retrofit.items():
-        row = _summary_row(summary, "nsw", case, category)
-        assert row["retrofit_npv_per_dwelling"] == pytest.approx(expected, rel=1e-12)
-
-    # Workbook Summary!E10 (base physical retrofit total, $B).
-    assert nsw_base_physical["retrofit_npv_total_billion"] == pytest.approx(6.669890713280385, rel=1e-12)
-
-
-def test_full_cdf_raises_retrofit_npv_above_truncated_workbook(tmp_path: Path, config: dict) -> None:
-    cdf = pd.read_csv(SPREADSHEET_CDF)
-    results_dir = _results_dir_with_cdf(tmp_path, cdf)
-    outputs = run_cost_analysis(config, results_dir, DEFAULT_CONSTRUCTION_INDEX_CSV, stagger_override=False)
-    row = _summary_row(outputs["summary"], "nsw", "base", "physical")
-    # Including the year-20 increment the workbook dropped must increase the NPV.
-    assert row["retrofit_npv_per_dwelling"] > 17739.072
-
-
-def test_stagger_scales_both_arms_by_the_same_cohort_factor(tmp_path: Path, config: dict) -> None:
-    cdf = pd.read_csv(SPREADSHEET_CDF)
-    results_dir = _results_dir_with_cdf(tmp_path, cdf)
-    staggered = run_cost_analysis(config, results_dir, DEFAULT_CONSTRUCTION_INDEX_CSV, stagger_override=True)
-    unstaggered = run_cost_analysis(config, results_dir, DEFAULT_CONSTRUCTION_INDEX_CSV, stagger_override=False)
-
-    discount_rate = float(config["analysis"]["discount_rate"])
-    buildout = int(config["analysis"]["buildout_years"])
+    outputs = run_cost_analysis(cfg, results_dir, DEFAULT_CONSTRUCTION_INDEX_CSV, dwelling_mix_csv=DEFAULT_DWELLING_MIX_CSV)
 
     for state in ("nsw", "wa"):
-        inflation = float(
-            staggered["assumptions"].loc[staggered["assumptions"]["state"] == state, "avg_inflation"].iloc[0]
-        )
-        # Delaying a cohort by one year inflates its nominal costs by (1+i) and
-        # discounts them by (1+r); averaging over equal cohorts gives the exact
-        # ratio between staggered and start-year retrofit NPVs.
-        factor = sum(((1.0 + inflation) / (1.0 + discount_rate)) ** b for b in range(buildout)) / buildout
-        row_s = _summary_row(staggered["summary"], state, "base", "physical")
-        row_u = _summary_row(unstaggered["summary"], state, "base", "physical")
-        assert row_s["retrofit_npv_per_dwelling"] == pytest.approx(
-            row_u["retrofit_npv_per_dwelling"] * factor, rel=1e-12
-        )
-        # The new-build arm is always cohort-spread, so it is identical in both modes.
-        assert row_s["new_build_npv_per_dwelling"] == pytest.approx(
-            row_u["new_build_npv_per_dwelling"], rel=1e-12
-        )
-        # With inflation below the discount rate, staggering lowers the retrofit NPV.
-        assert row_s["retrofit_npv_per_dwelling"] < row_u["retrofit_npv_per_dwelling"]
+        row = _summary_row(outputs["summary"], state, "base", "physical")
+        assert row["retrofit_npv_per_dwelling"] == pytest.approx(row["new_build_npv_per_dwelling"], rel=1e-12)
+
+
+def test_npv_matches_closed_form(tmp_path: Path, config: dict) -> None:
+    """Cross-check both arms against a direct closed-form computation."""
+    analysis = config["analysis"]
+    scenario = str(analysis["scenario"])
+    start_year = int(analysis["start_year"])
+    base_year = int(config["costs"]["base_year"])
+    buildout = int(analysis["buildout_years"])
+    rate = float(analysis["discount_rate"])
+
+    # CDF reaching 60% linearly over the horizon.
+    cdf_values = np.linspace(0.0, 0.6, HORIZON + 1)
+    results_dir = _results_dir_with_cdf(tmp_path, _synthetic_cdf(scenario, cdf_values))
+    outputs = run_cost_analysis(config, results_dir, DEFAULT_CONSTRUCTION_INDEX_CSV, dwelling_mix_csv=DEFAULT_DWELLING_MIX_CSV)
+
+    index_df = pd.read_csv(DEFAULT_CONSTRUCTION_INDEX_CSV).set_index("year")
+    state_costs = resolve_state_costs(config["costs"], ["nsw", "wa"], DEFAULT_DWELLING_MIX_CSV)
+    increments = np.diff(cdf_values, prepend=0.0)
+
+    for state in ("nsw", "wa"):
+        index = index_df[f"{state}_index"]
+        inflation = average_inflation(index, tuple(analysis["inflation_window"]))
+        anchor = index[start_year] / index[base_year]
+
+        def npv(base_cost: float, probabilities: np.ndarray) -> float:
+            total = 0.0
+            for b in range(buildout):  # build cohorts, equal weights
+                for k, probability in enumerate(probabilities):
+                    year = b + k
+                    nominal = base_cost * anchor * (1.0 + inflation) ** year
+                    total += (1.0 / buildout) * probability * nominal / (1.0 + rate) ** year
+            return total
+
+        row = _summary_row(outputs["summary"], state, "base", "physical")
+        assert row["new_build_npv_per_dwelling"] == pytest.approx(npv(state_costs[state]["new_build"], np.array([1.0])), rel=1e-12)
+        assert row["retrofit_npv_per_dwelling"] == pytest.approx(npv(state_costs[state]["retrofit"], increments), rel=1e-12)
 
 
 def test_totals_row_aggregates_states(tmp_path: Path, config: dict) -> None:
-    cdf = pd.read_csv(SPREADSHEET_CDF)
+    cdf = _synthetic_cdf(str(config["analysis"]["scenario"]), np.linspace(0.0, 0.8, HORIZON + 1))
     results_dir = _results_dir_with_cdf(tmp_path, cdf)
-    outputs = run_cost_analysis(config, results_dir, DEFAULT_CONSTRUCTION_INDEX_CSV)
+    outputs = run_cost_analysis(config, results_dir, DEFAULT_CONSTRUCTION_INDEX_CSV, dwelling_mix_csv=DEFAULT_DWELLING_MIX_CSV)
     summary = outputs["summary"]
 
     nsw = _summary_row(summary, "nsw", "base", "physical")

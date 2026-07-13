@@ -12,8 +12,6 @@ costs:
   # minimum accessibility standards in the National Construction Code.
   # Per-type costs are weighted into per-state figures using the new-dwelling
   # structure-type mix in `dwelling_mix_csv` (see docs/cost_analysis.md).
-  # A flat legacy mode (`new_build_per_dwelling` / `retrofit_per_dwelling`)
-  # remains supported for cross-checks against the prototype spreadsheet.
   base_year: 2021
   # New-build cost of Silver-level (Option 1) accessibility per dwelling: CIE
   # DRIS table 6.1 (non-exempt dwellings), DCWC construction cost adjusted to
@@ -57,11 +55,6 @@ analysis:
   # first entry is the change ending in that year). 2000-2019 deliberately
   # excludes the COVID-era spike.
   inflation_window: [2000, 2019]
-  # Stagger each build cohort's first-occupancy clock by its build year so the
-  # retrofit arm is treated symmetrically with the build-out of the new-build
-  # arm. Disable (or run with --no-stagger) to reproduce the original
-  # spreadsheet, which started every home's retrofit clock in start_year.
-  stagger_by_cohort: true
   # Model scenario whose first-occupancy CDF feeds the retrofit arm.
   scenario: main_inmover_first
 
