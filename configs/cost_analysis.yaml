@@ -12,6 +12,10 @@ costs:
   # minimum accessibility standards in the National Construction Code.
   base_year: 2021
   new_build_per_dwelling: 4000
+  # Average cost of tailored home modifications per modified dwelling at
+  # Silver-level (Option 1) unit costs — NOT a full Silver retrofit. CIE DRIS
+  # table 3.32 / appendix D: $18,821 Class 1a, $20,260 Class 2 (2021 dollars).
+  # Conservative: wheelchair users' Gold-level costs ($49,706) are excluded.
   retrofit_per_dwelling: 19000
 
 analysis:
