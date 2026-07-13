@@ -49,6 +49,7 @@ make run-baseline
 make report
 make manuscript
 make cost-analysis
+make trend-tables
 make reproduce
 make release-check
 ```
@@ -97,6 +98,7 @@ make smoke
 - [scripts/build_construction_index.py](scripts/build_construction_index.py) extracts the NSW/WA house-construction cost index from the PPI workbook.
 - [scripts/build_dwelling_mix.py](scripts/build_dwelling_mix.py) derives the NSW/WA new-dwelling structure-type mix (house/townhouse/apartment) from the Building Activity cube.
 - [scripts/retrofit_cost_analysis.py](scripts/retrofit_cost_analysis.py) compares the NPV of building all new homes accessible against retrofitting on first occupancy by a household with disability, using the model's first-occupancy CDF (see [docs/cost_analysis.md](docs/cost_analysis.md)).
+- [scripts/trend_tables.py](scripts/trend_tables.py) emits the paper's Appendix B trend-parameter table (historical person-level rates, household-level 2022 base rates, and the relative annual change for each trend window).
 
 ### Outputs
 - `data/processed/model_inputs.csv`
@@ -114,6 +116,7 @@ make smoke
 - `reports/manuscript/table_scenario_summary.{csv,md}` (paper Table 1)
 - `reports/manuscript/figure_01_ever_probabilities.png`, `reports/manuscript/figure_02_time_share.png` (paper Figures 1-2)
 - `reports/tables/retrofit_vs_newbuild_summary.{csv,md}` and `reports/tables/retrofit_vs_newbuild_cashflows.csv` — retrofit vs. accessible-new-build NPV comparison ([docs/cost_analysis.md](docs/cost_analysis.md))
+- `reports/tables/appendix_b_trend_parameters.{csv,md}` — paper Appendix B trend parameters (`make trend-tables`)
 
 ## Reproducibility Notes
 

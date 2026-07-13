@@ -28,6 +28,8 @@ EXPECTED_BASELINE_ARTIFACTS = [
     "reports/tables/retrofit_vs_newbuild_summary.csv",
     "reports/tables/retrofit_vs_newbuild_summary.md",
     "reports/tables/retrofit_vs_newbuild_cashflows.csv",
+    "reports/tables/appendix_b_trend_parameters.csv",
+    "reports/tables/appendix_b_trend_parameters.md",
     "reports/figures/figure_01_ever_probabilities.png",
     "reports/figures/figure_02_time_share.png",
     "reports/manifest.json",

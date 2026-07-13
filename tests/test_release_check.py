@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 import subprocess
 
@@ -72,6 +73,8 @@ def _make_minimal_release_repo(tmp_path: Path) -> Path:
         "reports/tables/retrofit_vs_newbuild_summary.csv",
         "reports/tables/retrofit_vs_newbuild_summary.md",
         "reports/tables/retrofit_vs_newbuild_cashflows.csv",
+        "reports/tables/appendix_b_trend_parameters.csv",
+        "reports/tables/appendix_b_trend_parameters.md",
         "reports/cost_analysis_manifest.json",
         "reports/figures/figure_01_ever_probabilities.png",
         "reports/figures/figure_02_time_share.png",
@@ -108,7 +111,7 @@ def _make_minimal_release_repo(tmp_path: Path) -> Path:
 
 
 def test_validate_release_accepts_current_repo() -> None:
-    subprocess.run(["make", "reproduce"], cwd=ROOT, check=True)
+    subprocess.run(["make", "reproduce", f"PYTHON={sys.executable}"], cwd=ROOT, check=True)
     validate_release(ROOT)
 
 
