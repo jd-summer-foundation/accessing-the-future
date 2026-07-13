@@ -44,6 +44,7 @@ make verify-data
 make build-data
 make validate-data
 make construction-index
+make dwelling-mix
 make run-baseline
 make report
 make manuscript
@@ -83,6 +84,7 @@ make smoke
 - Raw housing mobility workbook: [data/raw/2. Housing mobility.xlsx](data/raw/2.%20Housing%20mobility.xlsx)
 - SDAC time-series data cube: [data/raw/SDACDC01.xlsx](data/raw/SDACDC01.xlsx) — historical disability proportions by age for 2003–2022 (Table 1.3) and population weights (Table 3.1), used to compute annual increments for the trend scenarios
 - Producer Price Indexes workbook: [data/raw/6427017.xlsx](data/raw/6427017.xlsx) — ABS 6427.0 Table 17 house-construction indexes for NSW and WA, used by the retrofit cost analysis
+- Building Activity data cube: [data/raw/87520_activity.xlsb](data/raw/87520_activity.xlsb) — ABS 8752.0 dwelling commencements by structure type, used by the retrofit cost analysis to weight per-type costs into per-state figures
 - Version-controlled derivation rules: [configs/derivation.yaml](configs/derivation.yaml)
 - Version-controlled scenario definitions: [configs/baseline.yaml](configs/baseline.yaml)
 - Version-controlled cost assumptions: [configs/cost_analysis.yaml](configs/cost_analysis.yaml)
@@ -93,11 +95,13 @@ make smoke
 - [scripts/generate_reports.py](scripts/generate_reports.py) converts scenario summaries into one table and two figures.
 - [scripts/manuscript_figures.py](scripts/manuscript_figures.py) produces the paper-facing Table 1 and Figures 1-2 (base estimate with low/high error bars per scenario) into `reports/manuscript/`.
 - [scripts/build_construction_index.py](scripts/build_construction_index.py) extracts the NSW/WA house-construction cost index from the PPI workbook.
+- [scripts/build_dwelling_mix.py](scripts/build_dwelling_mix.py) derives the NSW/WA new-dwelling structure-type mix (house/townhouse/apartment) from the Building Activity cube.
 - [scripts/retrofit_cost_analysis.py](scripts/retrofit_cost_analysis.py) compares the NPV of building all new homes accessible against retrofitting on first occupancy by a household with disability, using the model's first-occupancy CDF (see [docs/cost_analysis.md](docs/cost_analysis.md)).
 
 ### Outputs
 - `data/processed/model_inputs.csv`
 - `data/processed/construction_index.csv`
+- `data/processed/dwelling_mix.csv`
 - `results/<run_name>/scenario_summaries.csv`
 - `results/<run_name>/first_occupancy_cdf.csv` — cumulative share of dwellings first occupied by a household with a physical/any disability, by year since build
 - `results/<run_name>/inputs_used.csv`

@@ -64,6 +64,32 @@ PPI_SERIES_IDS = {
     "wa": "A2333757A",   # Index Number ; 3011 House construction Western Australia
 }
 CONSTRUCTION_INDEX_COLUMNS = ["year", "nsw_index", "wa_index"]
+
+# ABS 8752.0 Building Activity, Australia: building-activity data cube used to
+# derive the structure-type mix (house / townhouse / apartment) of new
+# dwellings commenced in NSW and WA.
+DEFAULT_BUILDING_ACTIVITY_WORKBOOK = REPO_ROOT / "data/raw/87520_activity.xlsb"
+DEFAULT_DWELLING_MIX_CSV = REPO_ROOT / "data/processed/dwelling_mix.csv"
+DWELLING_MIX_COLUMNS = [
+    "state",
+    "dwelling_type",
+    "commenced",
+    "share",
+    "window_start_quarter",
+    "window_end_quarter",
+]
+# ABS "Type of Building" labels -> reporting dwelling types (aligned with the
+# CIE DRIS cost archetypes: separate house, townhouse, apartment).
+BUILDING_TYPE_MAP = {
+    "Houses": "house",
+    "Semi-detached, row or terrace houses, townhouses - Total": "townhouse",
+    "Apartments - Total including those attached to a house": "apartment",
+}
+DWELLING_TYPES = ["house", "townhouse", "apartment"]
+DWELLING_MIX_STATES = {
+    "nsw": "New South Wales",
+    "wa": "Western Australia",
+}
 DEFAULT_DERIVATION_CONFIG = REPO_ROOT / "configs/derivation.yaml"
 DEFAULT_BASELINE_CONFIG = REPO_ROOT / "configs/baseline.yaml"
 DEFAULT_SMOKE_CONFIG = REPO_ROOT / "configs/smoke.yaml"
@@ -74,6 +100,7 @@ DIRECT_DEPENDENCIES = [
     "numpy",
     "pandas",
     "openpyxl",
+    "pyxlsb",
     "PyYAML",
     "matplotlib",
     "pytest",

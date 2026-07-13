@@ -10,9 +10,37 @@ costs:
   # Per-dwelling costs in nominal dollars of `base_year`, from the Centre for
   # International Economics Decision Regulation Impact Statement (CIE DRIS) on
   # minimum accessibility standards in the National Construction Code.
+  # Per-type costs are weighted into per-state figures using the new-dwelling
+  # structure-type mix in `dwelling_mix_csv` (see docs/cost_analysis.md).
+  # A flat legacy mode (`new_build_per_dwelling` / `retrofit_per_dwelling`)
+  # remains supported for cross-checks against the prototype spreadsheet.
   base_year: 2021
-  new_build_per_dwelling: 4000
-  retrofit_per_dwelling: 19000
+  # New-build cost of Silver-level (Option 1) accessibility per dwelling: CIE
+  # DRIS table 6.1 (non-exempt dwellings), DCWC construction cost adjusted to
+  # the national average plus the net opportunity cost of space.
+  new_build_by_type:
+    house: 3874
+    townhouse: 4186
+    apartment: 5748
+  # Mandate overhead added to every new dwelling: compliance verification
+  # (CIE central case, $200/dwelling) plus one-off government + industry
+  # transition/retraining costs ($28.47M spread over ~1.90M national
+  # completions in a 10-year regulatory period, ~$15/dwelling).
+  new_build_mandate_overhead: 215
+  # Average cost of tailored home modifications per modified dwelling at
+  # Silver-level (Option 1) unit costs — NOT a full Silver retrofit. CIE DRIS
+  # table 3.32 / appendix D: $18,821 Class 1a (houses and townhouses),
+  # $20,260 Class 2 (apartments), 2021 dollars.
+  # Conservative: wheelchair users' Gold-level costs ($49,706) are excluded.
+  retrofit_by_type:
+    house: 18821
+    townhouse: 18821
+    apartment: 20260
+
+# New-dwelling structure-type mix (share of houses / townhouses / apartments
+# commenced over the most recent 3 years, ABS 8752.0 Building Activity), built
+# by scripts/build_dwelling_mix.py. Used to weight the per-type costs above.
+dwelling_mix_csv: data/processed/dwelling_mix.csv
 
 analysis:
   # NPV reference year. Costs are anchored to the March-quarter construction

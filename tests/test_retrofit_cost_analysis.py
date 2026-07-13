@@ -19,8 +19,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from scripts.pipeline_utils import DEFAULT_CONSTRUCTION_INDEX_CSV, load_yaml
-from scripts.retrofit_cost_analysis import DEFAULT_COST_CONFIG, run_cost_analysis
+from scripts.pipeline_utils import DEFAULT_CONSTRUCTION_INDEX_CSV, DEFAULT_DWELLING_MIX_CSV, load_yaml
+from scripts.retrofit_cost_analysis import DEFAULT_COST_CONFIG, resolve_state_costs, run_cost_analysis
 
 ROOT = Path(__file__).resolve().parents[1]
 SPREADSHEET_CDF = ROOT / "tests/fixtures/spreadsheet_first_occupancy_cdf.csv"
@@ -28,7 +28,16 @@ SPREADSHEET_CDF = ROOT / "tests/fixtures/spreadsheet_first_occupancy_cdf.csv"
 
 @pytest.fixture(scope="module")
 def config() -> dict:
-    return load_yaml(DEFAULT_COST_CONFIG)
+    """The prototype workbook's flat cost assumptions ($4k/$19k for every state).
+
+    The workbook cross-check expectations below were produced with these flat
+    costs, so the engine-mechanics tests pin them via the legacy cost mode
+    rather than the per-type/mix-weighted costs the default config now uses.
+    """
+    cfg = load_yaml(DEFAULT_COST_CONFIG)
+    cfg = {**cfg, "costs": {"base_year": cfg["costs"]["base_year"], "new_build_per_dwelling": 4000, "retrofit_per_dwelling": 19000}}
+    cfg.pop("dwelling_mix_csv", None)
+    return cfg
 
 
 def _results_dir_with_cdf(tmp_path: Path, cdf: pd.DataFrame) -> Path:
@@ -58,6 +67,38 @@ def _summary_row(summary: pd.DataFrame, state: str, case: str, category: str) ->
     ]
     assert len(rows) == 1
     return rows.iloc[0]
+
+
+def test_state_costs_weight_cie_dris_by_dwelling_mix() -> None:
+    """Default config: per-type CIE DRIS costs weighted by the ABS 8752.0 mix."""
+    cfg = load_yaml(DEFAULT_COST_CONFIG)
+    resolved = resolve_state_costs(cfg["costs"], ["nsw", "wa"], DEFAULT_DWELLING_MIX_CSV)
+
+    mix = pd.read_csv(DEFAULT_DWELLING_MIX_CSV)
+    for state in ("nsw", "wa"):
+        shares = dict(zip(mix.loc[mix["state"] == state, "dwelling_type"], mix.loc[mix["state"] == state, "share"]))
+        expected_new_build = (
+            shares["house"] * 3874 + shares["townhouse"] * 4186 + shares["apartment"] * 5748 + 215
+        )
+        expected_retrofit = (shares["house"] + shares["townhouse"]) * 18821 + shares["apartment"] * 20260
+        assert resolved[state]["new_build"] == pytest.approx(expected_new_build, rel=1e-12)
+        assert resolved[state]["retrofit"] == pytest.approx(expected_retrofit, rel=1e-12)
+
+    # Guard against silent regressions in the derived 2021-dollar figures.
+    assert resolved["nsw"]["new_build"] == pytest.approx(4745.4, abs=0.5)
+    assert resolved["nsw"]["retrofit"] == pytest.approx(19273.7, abs=0.5)
+    assert resolved["wa"]["new_build"] == pytest.approx(4280.5, abs=0.5)
+    assert resolved["wa"]["retrofit"] == pytest.approx(18950.2, abs=0.5)
+
+
+def test_flat_and_by_type_cost_modes_are_exclusive() -> None:
+    cfg = load_yaml(DEFAULT_COST_CONFIG)
+    mixed = {**cfg["costs"], "new_build_per_dwelling": 4000}
+    with pytest.raises(ValueError, match="one mode only"):
+        resolve_state_costs(mixed, ["nsw"], DEFAULT_DWELLING_MIX_CSV)
+    by_type_only = {key: value for key, value in cfg["costs"].items()}
+    with pytest.raises(ValueError, match="dwelling mix"):
+        resolve_state_costs(by_type_only, ["nsw"], None)
 
 
 def test_nsw_no_stagger_matches_spreadsheet_exactly(tmp_path: Path, config: dict) -> None:

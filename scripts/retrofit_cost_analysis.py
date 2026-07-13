@@ -9,8 +9,11 @@ Combines three reproducible inputs:
    (data/processed/construction_index.csv, from 6427.0 Table 17), which anchors
    the CIE DRIS 2021 costs to the analysis start year and sets state-specific
    forward inflation;
-3. assumptions in configs/cost_analysis.yaml (costs, discount rate, build-out,
-   National Housing Accord home counts).
+3. the processed new-dwelling structure-type mix
+   (data/processed/dwelling_mix.csv, from ABS 8752.0 Building Activity), which
+   weights the CIE DRIS per-type costs into per-state figures;
+4. assumptions in configs/cost_analysis.yaml (per-type costs, discount rate,
+   build-out, National Housing Accord home counts).
 
 Both arms discount nominal expected costs to the analysis start year:
 - New-build arm: every home incurs the accessibility cost in its build year
@@ -43,6 +46,7 @@ from scripts.pipeline_utils import (
     DEFAULT_CONSTRUCTION_INDEX_CSV,
     DEFAULT_REPORTS_DIR,
     DEFAULT_RESULTS_DIR,
+    DWELLING_TYPES,
     REPO_ROOT,
     artifact_checksums,
     load_yaml,
@@ -67,6 +71,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", type=Path, default=DEFAULT_COST_CONFIG, help="Path to cost analysis YAML config.")
     parser.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR, help="Model run directory containing first_occupancy_cdf.csv.")
     parser.add_argument("--index-csv", type=Path, default=DEFAULT_CONSTRUCTION_INDEX_CSV, help="Processed construction index CSV.")
+    parser.add_argument("--mix-csv", type=Path, default=None, help="Processed dwelling mix CSV (default: dwelling_mix_csv from the config).")
     parser.add_argument("--reports-dir", type=Path, default=DEFAULT_REPORTS_DIR, help="Directory where tables will be written.")
     parser.add_argument(
         "--no-stagger",
@@ -74,6 +79,53 @@ def parse_args() -> argparse.Namespace:
         help="Start every home's retrofit clock in start_year regardless of build cohort (spreadsheet-compatibility mode).",
     )
     return parser.parse_args()
+
+
+def resolve_state_costs(
+    costs_cfg: Dict[str, object],
+    states: List[str],
+    dwelling_mix_csv: Path | None,
+) -> Dict[str, Dict[str, float]]:
+    """Per-state base-year costs for each arm.
+
+    Primary mode: `new_build_by_type` / `retrofit_by_type` are weighted by each
+    state's new-dwelling structure-type mix (house / townhouse / apartment
+    commencement shares), and `new_build_mandate_overhead` (compliance
+    verification plus transition costs) is added to the new-build arm.
+
+    Legacy mode: flat `new_build_per_dwelling` / `retrofit_per_dwelling` apply
+    to every state unchanged (prototype-spreadsheet compatibility).
+    """
+    if "new_build_per_dwelling" in costs_cfg or "retrofit_per_dwelling" in costs_cfg:
+        if "new_build_by_type" in costs_cfg or "retrofit_by_type" in costs_cfg:
+            raise ValueError("Config mixes flat and by-type cost keys; use one mode only")
+        new_build = float(costs_cfg["new_build_per_dwelling"])
+        retrofit = float(costs_cfg["retrofit_per_dwelling"])
+        return {state: {"new_build": new_build, "retrofit": retrofit} for state in states}
+
+    if dwelling_mix_csv is None:
+        raise ValueError("By-type costs require a dwelling mix CSV (dwelling_mix_csv)")
+    mix = pd.read_csv(dwelling_mix_csv)
+    new_build_by_type = {t: float(v) for t, v in dict(costs_cfg["new_build_by_type"]).items()}
+    retrofit_by_type = {t: float(v) for t, v in dict(costs_cfg["retrofit_by_type"]).items()}
+    overhead = float(costs_cfg.get("new_build_mandate_overhead", 0.0))
+    for label, by_type in (("new_build_by_type", new_build_by_type), ("retrofit_by_type", retrofit_by_type)):
+        if sorted(by_type) != sorted(DWELLING_TYPES):
+            raise ValueError(f"{label} must cover exactly {DWELLING_TYPES}, found {sorted(by_type)}")
+
+    resolved: Dict[str, Dict[str, float]] = {}
+    for state in states:
+        rows = mix.loc[mix["state"] == state]
+        shares = dict(zip(rows["dwelling_type"], rows["share"].astype(float)))
+        if sorted(shares) != sorted(DWELLING_TYPES):
+            raise ValueError(f"Dwelling mix for {state} must cover exactly {DWELLING_TYPES}, found {sorted(shares)}")
+        if abs(sum(shares.values()) - 1.0) > 1e-9:
+            raise ValueError(f"Dwelling mix shares for {state} sum to {sum(shares.values())}, expected 1")
+        resolved[state] = {
+            "new_build": sum(shares[t] * new_build_by_type[t] for t in DWELLING_TYPES) + overhead,
+            "retrofit": sum(shares[t] * retrofit_by_type[t] for t in DWELLING_TYPES),
+        }
+    return resolved
 
 
 def average_inflation(index: pd.Series, window: tuple[int, int]) -> float:
@@ -157,6 +209,7 @@ def run_cost_analysis(
     results_dir: Path,
     index_csv: Path,
     *,
+    dwelling_mix_csv: Path | None = None,
     stagger_override: bool | None = None,
 ) -> Dict[str, pd.DataFrame]:
     costs_cfg = config["costs"]
@@ -164,8 +217,9 @@ def run_cost_analysis(
     states_cfg = config["states"]
 
     base_year = int(costs_cfg["base_year"])
-    new_build_cost = float(costs_cfg["new_build_per_dwelling"])
-    retrofit_cost = float(costs_cfg["retrofit_per_dwelling"])
+    if dwelling_mix_csv is None and "dwelling_mix_csv" in config:
+        dwelling_mix_csv = REPO_ROOT / str(config["dwelling_mix_csv"])
+    state_costs = resolve_state_costs(costs_cfg, list(states_cfg), dwelling_mix_csv)
     start_year = int(analysis_cfg["start_year"])
     buildout_years = int(analysis_cfg["buildout_years"])
     discount_rate = float(analysis_cfg["discount_rate"])
@@ -196,14 +250,16 @@ def run_cost_analysis(
             index=index_df["year"].astype(int).to_numpy(),
         )
         inflation = average_inflation(index, window)
-        newbuild_path = cost_path(new_build_cost, index, base_year, start_year, inflation, n_years)
-        retrofit_path = cost_path(retrofit_cost, index, base_year, start_year, inflation, n_years)
+        newbuild_path = cost_path(state_costs[state]["new_build"], index, base_year, start_year, inflation, n_years)
+        retrofit_path = cost_path(state_costs[state]["retrofit"], index, base_year, start_year, inflation, n_years)
 
         assumption_rows.append(
             {
                 "state": state,
                 "new_homes": new_homes,
                 "avg_inflation": inflation,
+                f"new_build_cost_{base_year}": state_costs[state]["new_build"],
+                f"retrofit_cost_{base_year}": state_costs[state]["retrofit"],
                 f"new_build_cost_{start_year}": float(newbuild_path[0]),
                 f"retrofit_cost_{start_year}": float(retrofit_path[0]),
             }
@@ -318,10 +374,14 @@ def _write_markdown_summary(summary: pd.DataFrame, assumptions: pd.DataFrame, st
 def main() -> None:
     args = parse_args()
     config = load_yaml(args.config)
+    mix_csv = args.mix_csv
+    if mix_csv is None and "dwelling_mix_csv" in config:
+        mix_csv = REPO_ROOT / str(config["dwelling_mix_csv"])
     outputs = run_cost_analysis(
         config,
         args.results_dir,
         args.index_csv,
+        dwelling_mix_csv=mix_csv,
         stagger_override=False if args.no_stagger else None,
     )
 
@@ -353,6 +413,16 @@ def main() -> None:
                 "path": manifest_path(args.index_csv),
                 "sha256": sha256_file(args.index_csv),
             },
+            **(
+                {
+                    "dwelling_mix": {
+                        "path": manifest_path(mix_csv),
+                        "sha256": sha256_file(mix_csv),
+                    }
+                }
+                if mix_csv is not None
+                else {}
+            ),
         },
         "stagger_by_cohort": outputs["stagger"],
         "derived_assumptions": outputs["assumptions"].to_dict(orient="records"),
