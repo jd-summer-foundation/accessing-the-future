@@ -23,7 +23,7 @@ Both arms discount nominal expected costs to the analysis start year:
 
 The retrofit arm is a conservative LOWER bound: first occupancies beyond the
 model's horizon (20 years per cohort) are excluded, and by then the CDF has
-only reached roughly 70-84% of dwellings.
+only reached roughly 68-83% of dwellings.
 """
 
 from __future__ import annotations

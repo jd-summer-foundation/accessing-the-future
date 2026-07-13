@@ -131,7 +131,7 @@ For each state, uncertainty case (low/base/high) and category (physical/any):
 
 - **The retrofit NPV is a conservative lower bound.** The model horizon is 20
   years per cohort, and by year 20 the first-occupancy CDF has reached only
-  roughly 70–84% of dwellings (depending on case and category). Every first
+  roughly 68–83% of dwellings (depending on case and category). Every first
   occupancy beyond a cohort's 20-year window — eventually most of the
   remainder — would add retrofit cost but is excluded. Since retrofitting is
   the more expensive arm, this biases the comparison *against* the
