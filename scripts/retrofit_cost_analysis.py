@@ -19,9 +19,7 @@ Both arms discount nominal expected costs to the analysis start year:
 - New-build arm: every home incurs the accessibility cost in its build year
   (equal cohorts over the build-out period).
 - Retrofit arm: a home built in year b incurs the retrofit cost in year b + k
-  with probability equal to the CDF increment at year k. With
-  stagger_by_cohort disabled, every home's clock starts in start_year instead
-  (the original spreadsheet's simplification).
+  with probability equal to the CDF increment at year k.
 
 The retrofit arm is a conservative LOWER bound: first occupancies beyond the
 model's horizon (20 years per cohort) are excluded, and by then the CDF has
@@ -73,11 +71,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--index-csv", type=Path, default=DEFAULT_CONSTRUCTION_INDEX_CSV, help="Processed construction index CSV.")
     parser.add_argument("--mix-csv", type=Path, default=None, help="Processed dwelling mix CSV (default: dwelling_mix_csv from the config).")
     parser.add_argument("--reports-dir", type=Path, default=DEFAULT_REPORTS_DIR, help="Directory where tables will be written.")
-    parser.add_argument(
-        "--no-stagger",
-        action="store_true",
-        help="Start every home's retrofit clock in start_year regardless of build cohort (spreadsheet-compatibility mode).",
-    )
     return parser.parse_args()
 
 
@@ -88,21 +81,11 @@ def resolve_state_costs(
 ) -> Dict[str, Dict[str, float]]:
     """Per-state base-year costs for each arm.
 
-    Primary mode: `new_build_by_type` / `retrofit_by_type` are weighted by each
-    state's new-dwelling structure-type mix (house / townhouse / apartment
+    `new_build_by_type` / `retrofit_by_type` are weighted by each state's
+    new-dwelling structure-type mix (house / townhouse / apartment
     commencement shares), and `new_build_mandate_overhead` (compliance
     verification plus transition costs) is added to the new-build arm.
-
-    Legacy mode: flat `new_build_per_dwelling` / `retrofit_per_dwelling` apply
-    to every state unchanged (prototype-spreadsheet compatibility).
     """
-    if "new_build_per_dwelling" in costs_cfg or "retrofit_per_dwelling" in costs_cfg:
-        if "new_build_by_type" in costs_cfg or "retrofit_by_type" in costs_cfg:
-            raise ValueError("Config mixes flat and by-type cost keys; use one mode only")
-        new_build = float(costs_cfg["new_build_per_dwelling"])
-        retrofit = float(costs_cfg["retrofit_per_dwelling"])
-        return {state: {"new_build": new_build, "retrofit": retrofit} for state in states}
-
     if dwelling_mix_csv is None:
         raise ValueError("By-type costs require a dwelling mix CSV (dwelling_mix_csv)")
     mix = pd.read_csv(dwelling_mix_csv)
@@ -179,13 +162,6 @@ def load_first_occupancy_increments(
     return increments
 
 
-def cohort_weights(buildout_years: int, stagger: bool) -> np.ndarray:
-    """Share of homes whose retrofit clock starts b years after start_year."""
-    if stagger:
-        return np.full(buildout_years, 1.0 / buildout_years)
-    return np.array([1.0])  # everything starts at start_year
-
-
 def expected_yearly_costs(
     per_start_costs: np.ndarray,
     probabilities: np.ndarray,
@@ -210,7 +186,6 @@ def run_cost_analysis(
     index_csv: Path,
     *,
     dwelling_mix_csv: Path | None = None,
-    stagger_override: bool | None = None,
 ) -> Dict[str, pd.DataFrame]:
     costs_cfg = config["costs"]
     analysis_cfg = config["analysis"]
@@ -225,7 +200,6 @@ def run_cost_analysis(
     discount_rate = float(analysis_cfg["discount_rate"])
     window = tuple(int(y) for y in analysis_cfg["inflation_window"])
     scenario = str(analysis_cfg["scenario"])
-    stagger = bool(analysis_cfg.get("stagger_by_cohort", True)) if stagger_override is None else stagger_override
 
     index_df = pd.read_csv(index_csv)
     increments = load_first_occupancy_increments(results_dir, scenario)
@@ -235,8 +209,10 @@ def run_cost_analysis(
     # further `horizon` years beyond its build year.
     n_years = buildout_years + horizon
     discount = (1.0 + discount_rate) ** -np.arange(n_years, dtype=float)
+    # Homes are built in equal annual cohorts; each cohort's retrofit clock
+    # starts in its build year, symmetrically with the new-build arm.
     build_weights = np.full(buildout_years, 1.0 / buildout_years)
-    retrofit_weights = cohort_weights(buildout_years, stagger)
+    retrofit_weights = build_weights
 
     assumption_rows = []
     summary_rows = []
@@ -334,10 +310,10 @@ def run_cost_analysis(
     ).reset_index(drop=True)
     cashflows = pd.DataFrame(cashflow_rows)
     assumptions = pd.DataFrame(assumption_rows)
-    return {"summary": summary, "cashflows": cashflows, "assumptions": assumptions, "stagger": stagger, "horizon": horizon}
+    return {"summary": summary, "cashflows": cashflows, "assumptions": assumptions, "horizon": horizon}
 
 
-def _write_markdown_summary(summary: pd.DataFrame, assumptions: pd.DataFrame, stagger: bool, horizon: int, path: Path) -> None:
+def _write_markdown_summary(summary: pd.DataFrame, assumptions: pd.DataFrame, horizon: int, path: Path) -> None:
     display = summary.copy()
     for column in ["new_build_npv_per_dwelling", "retrofit_npv_per_dwelling"]:
         display[column] = display[column].map(lambda v: f"{v:,.0f}")
@@ -348,7 +324,7 @@ def _write_markdown_summary(summary: pd.DataFrame, assumptions: pd.DataFrame, st
         "# Retrofit-as-needed vs. accessible new build",
         "",
         "NPV of expected per-dwelling and total costs, discounted to the analysis start year.",
-        f"Retrofit clocks {'staggered by build cohort' if stagger else 'all start in the analysis start year (spreadsheet-compatibility mode)'}.",
+        "Retrofit clocks are staggered by build cohort.",
         f"The retrofit arm is a conservative lower bound: first occupancies more than {horizon} years",
         "after a home is built fall outside the model horizon and are excluded.",
         "",
@@ -382,7 +358,6 @@ def main() -> None:
         args.results_dir,
         args.index_csv,
         dwelling_mix_csv=mix_csv,
-        stagger_override=False if args.no_stagger else None,
     )
 
     tables_dir = args.reports_dir / "tables"
@@ -393,7 +368,7 @@ def main() -> None:
 
     outputs["summary"].to_csv(summary_csv, index=False)
     outputs["cashflows"].to_csv(cashflow_csv, index=False)
-    _write_markdown_summary(outputs["summary"], outputs["assumptions"], outputs["stagger"], outputs["horizon"], summary_md)
+    _write_markdown_summary(outputs["summary"], outputs["assumptions"], outputs["horizon"], summary_md)
 
     generated = [summary_csv, summary_md, cashflow_csv]
     cdf_path = args.results_dir / "first_occupancy_cdf.csv"
@@ -424,7 +399,6 @@ def main() -> None:
                 else {}
             ),
         },
-        "stagger_by_cohort": outputs["stagger"],
         "derived_assumptions": outputs["assumptions"].to_dict(orient="records"),
         "artifacts": [str(path.relative_to(args.reports_dir)) for path in generated],
         "artifact_checksums": artifact_checksums(generated, relative_to=args.reports_dir),
