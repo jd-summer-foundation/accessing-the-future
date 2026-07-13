@@ -2,7 +2,7 @@ PYTHON ?= python3
 BASELINE_CONFIG ?= configs/baseline.yaml
 SMOKE_CONFIG ?= configs/smoke.yaml
 
-.PHONY: verify-data build-data validate-data construction-index run-baseline report manuscript cost-analysis reproduce smoke release-check test
+.PHONY: verify-data build-data validate-data construction-index dwelling-mix run-baseline report manuscript cost-analysis reproduce smoke release-check test
 
 verify-data:
 	$(PYTHON) scripts/verify_data.py
@@ -12,6 +12,9 @@ build-data: verify-data
 
 construction-index: verify-data
 	$(PYTHON) scripts/build_construction_index.py
+
+dwelling-mix: verify-data
+	$(PYTHON) scripts/build_dwelling_mix.py
 
 validate-data: verify-data
 	$(PYTHON) scripts/validate_inputs.py
@@ -25,10 +28,10 @@ report:
 manuscript:
 	$(PYTHON) scripts/manuscript_figures.py --results-dir results/baseline --reports-dir reports
 
-cost-analysis: construction-index
+cost-analysis: construction-index dwelling-mix
 	$(PYTHON) scripts/retrofit_cost_analysis.py --results-dir results/baseline --reports-dir reports
 
-reproduce: build-data validate-data construction-index
+reproduce: build-data validate-data construction-index dwelling-mix
 	$(PYTHON) run_from_excel.py --config $(BASELINE_CONFIG)
 	$(PYTHON) scripts/generate_reports.py --results-dir results/baseline --reports-dir reports
 	$(PYTHON) scripts/manuscript_figures.py --results-dir results/baseline --reports-dir reports
