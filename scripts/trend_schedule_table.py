@@ -151,64 +151,89 @@ def _markdown_table(df: pd.DataFrame) -> str:
     return "\n".join([header, divider, *rows])
 
 
-def _schedule_markdown(schedule_df: pd.DataFrame, start_year: int) -> str:
-    """Render the schedules as copy-paste tables: rows = years, columns = brackets."""
+def _schedule_markdown(schedule_df: pd.DataFrame, start_year: int, horizon_years: int) -> str:
+    """Render the schedules as portrait-friendly tables.
+
+    Rows are age brackets and columns are five-yearly milestone years. Because
+    each trend applies a constant annual increment, the milestones fully
+    characterise the path (intermediate years change linearly, subject to the
+    caps); the accompanying CSV retains every simulation year.
+    """
+    milestone_offsets = sorted(set(range(0, horizon_years + 1, 5)) | {horizon_years})
+    milestone_years = [start_year + offset for offset in milestone_offsets]
     sections: List[str] = [
         "# Appendix: projected disability rates by trend scenario",
         "",
         "Simulated household-level disability prevalence (%) by age of household",
-        f"reference person, for each simulation year, as applied by the model. Rates in",
-        f"year 0 ({start_year}) are the SDAC {start_year} household-level base rates; later years",
-        "apply the per-bracket relative annual trend derived from the SDAC person-level",
-        "any-disability series (see the trend-parameters table). Physical-disability",
-        "rates are capped at the any-disability rate in the same bracket and year.",
+        "reference person, as applied by the model, shown at five-year intervals",
+        f"of the simulation horizon. Rates in {start_year} are the SDAC {start_year}",
+        "household-level base rates; later years apply the per-bracket relative",
+        "annual trend derived from the SDAC person-level any-disability series",
+        "(see the trend-parameters table). Because each trend applies a constant",
+        "annual increment, intermediate years change linearly between the columns",
+        "shown; the full annual schedule is in the accompanying CSV. Under the",
+        f"no-trend treatment, rates stay at their {start_year} values throughout,",
+        f"so the {start_year} column describes that scenario in full.",
+        "Physical-disability rates are capped at the any-disability rate in the",
+        "same bracket and year.",
     ]
     rate_columns = {
         "any_disability": "any_disability_rate",
         "physical_disability": "physical_disability_rate",
     }
     for trend in eng.TREND_TYPES:
-        subset = schedule_df.loc[schedule_df["trend"] == trend]
-        sections += ["", f"## {TREND_LABELS[trend]}"]
         if trend == "none":
-            sections += [
-                "",
-                "Rates are held fixed at their base-year values for the whole horizon,",
-                "so every simulation year applies the year-0 row shown below.",
-            ]
+            continue
+        subset = schedule_df.loc[
+            (schedule_df["trend"] == trend) & (schedule_df["calendar_year"].isin(milestone_years))
+        ]
+        sections += ["", f"## {TREND_LABELS[trend]}"]
         for category, column in rate_columns.items():
-            wide = subset.pivot(index="calendar_year", columns="age_bracket", values=column)
-            wide = wide.loc[:, eng.BRACKETS]
-            if trend == "none":
-                wide = wide.iloc[:1]
+            wide = subset.pivot(index="age_bracket", columns="calendar_year", values=column)
+            wide = wide.loc[eng.BRACKETS, milestone_years]
             display = wide.map(lambda value: f"{value * 100:.1f}").reset_index()
-            display = display.rename(columns={"calendar_year": "Year"})
+            display = display.rename(columns={"age_bracket": "Age bracket"})
             sections += ["", f"### {CATEGORY_LABELS[category]} (%)", "", _markdown_table(display)]
     return "\n".join(sections) + "\n"
 
 
-def _parameters_markdown(params_df: pd.DataFrame) -> str:
+def _parameters_markdown(params_df: pd.DataFrame, start_year: int) -> str:
+    """Render the trend derivation as one portrait-friendly table.
+
+    Rows are age brackets; columns give the person-level any-disability rates
+    at each window endpoint and the relative annual change each window implies.
+    The intermediate derivation columns (absolute increments, household-level
+    increments) remain in the accompanying CSV.
+    """
     sections: List[str] = [
         "# Appendix: trend parameters by age bracket",
         "",
         "Derivation of the annual rate changes applied under each historical-trend",
-        "window. Person-level columns are the SDAC time-series any-disability rates",
-        "used to estimate the trend; the relative annual change is applied to the",
-        "household-level 2022 base rates (any and physical) each simulation year.",
-        "All rate and increment columns are percentages (increments in percentage",
-        "points per year).",
+        "window. The person-level columns are the SDAC time-series any-disability",
+        "rates used to estimate the trend. Each window's relative annual change is",
+        "the absolute annual increment over that window divided by the",
+        f"{start_year} rate. In the simulation, this relative rate is applied to",
+        f"the household-level {start_year} base rates (any and physical disability",
+        "alike) as a constant annual increment. The intermediate derivation",
+        "columns are available in the accompanying CSV.",
     ]
-    percent_columns = [
-        column for column in params_df.columns
-        if column not in {"trend", "age_bracket", "window_start_year", "window_years", "relative_annual_change"}
-    ]
-    for trend, group in params_df.groupby("trend", sort=False):
-        display = group.drop(columns="trend").copy()
-        for column in percent_columns:
-            decimals = 3 if column.startswith("annual_increment") else 1
-            display[column] = display[column].map(lambda value: f"{value * 100:+.3f}" if decimals == 3 else f"{value * 100:.1f}")
-        display["relative_annual_change"] = group["relative_annual_change"].map(lambda value: f"{value * 100:+.2f}%")
-        sections += ["", f"## {TREND_LABELS[str(trend)]}", "", _markdown_table(display)]
+    display = pd.DataFrame({"Age bracket": eng.BRACKETS})
+    indexed = params_df.set_index(["trend", "age_bracket"])
+    prior_columns: List[tuple[int, str]] = []
+    change_columns: List[str] = []
+    for trend, (prior_year, _) in eng._LINEAR_TREND_WINDOWS.items():
+        group = indexed.loc[trend].loc[eng.BRACKETS]
+        prior_columns.append(
+            (prior_year, [f"{value * 100:.1f}" for value in group["person_any_rate_window_start"]])
+        )
+        label = f"Annual change, {prior_year}–{start_year} (%/yr)"
+        display[label] = [f"{value * 100:+.2f}" for value in group["relative_annual_change"]]
+        change_columns.append(label)
+        rates_2022 = [f"{value * 100:.1f}" for value in group[f"person_any_rate_{start_year}"]]
+    for prior_year, values in sorted(prior_columns):
+        display.insert(len(display.columns) - len(change_columns), f"Any {prior_year} (%)", values)
+    display.insert(len(display.columns) - len(change_columns), f"Any {start_year} (%)", rates_2022)
+    sections += ["", _markdown_table(display)]
     return "\n".join(sections) + "\n"
 
 
@@ -249,9 +274,9 @@ def generate_trend_tables(
     params_md = tables_dir / f"{PARAMS_NAME}.md"
 
     schedule_df.to_csv(schedule_csv, index=False)
-    schedule_md.write_text(_schedule_markdown(schedule_df, start_year), encoding="utf-8")
+    schedule_md.write_text(_schedule_markdown(schedule_df, start_year, horizon_years), encoding="utf-8")
     params_df.to_csv(params_csv, index=False)
-    params_md.write_text(_parameters_markdown(params_df), encoding="utf-8")
+    params_md.write_text(_parameters_markdown(params_df, start_year), encoding="utf-8")
 
     generated_paths = [params_csv, params_md, schedule_csv, schedule_md]
     manifest = {
