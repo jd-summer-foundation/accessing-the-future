@@ -171,7 +171,8 @@ def _schedule_markdown(schedule_df: pd.DataFrame, start_year: int, horizon_years
         "annual trend derived from the SDAC person-level any-disability series",
         "(see the trend-parameters table). Because each trend applies a constant",
         "annual increment, intermediate years change linearly between the columns",
-        "shown; the full annual schedule is in the accompanying CSV. Under the",
+        "shown; the full annual schedule (table_a2_trend_schedules.csv) is",
+        "regenerated from the analysis code with `make trend-tables`. Under the",
         f"no-trend treatment, rates stay at their {start_year} values throughout,",
         f"so the {start_year} column describes that scenario in full.",
         "Physical-disability rates are capped at the any-disability rate in the",
@@ -215,7 +216,8 @@ def _parameters_markdown(params_df: pd.DataFrame, start_year: int) -> str:
         f"{start_year} rate. In the simulation, this relative rate is applied to",
         f"the household-level {start_year} base rates (any and physical disability",
         "alike) as a constant annual increment. The intermediate derivation",
-        "columns are available in the accompanying CSV.",
+        "columns (table_a1_trend_parameters.csv) are regenerated from the",
+        "analysis code with `make trend-tables`.",
     ]
     display = pd.DataFrame({"Age bracket": eng.BRACKETS})
     indexed = params_df.set_index(["trend", "age_bracket"])
