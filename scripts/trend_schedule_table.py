@@ -214,10 +214,11 @@ def _parameters_markdown(params_df: pd.DataFrame, start_year: int) -> str:
         "rates used to estimate the trend. Each window's relative annual change is",
         "the absolute annual increment over that window divided by the",
         f"{start_year} rate. In the simulation, this relative rate is applied to",
-        f"the household-level {start_year} base rates (any and physical disability",
-        "alike) as a constant annual increment. The intermediate derivation",
-        "columns (table_a1_trend_parameters.csv) are regenerated from the",
-        "analysis code with `make trend-tables`.",
+        f"the household-level {start_year} base rates (the two rightmost rate",
+        "columns; any and physical disability alike) as a constant annual",
+        "increment. The intermediate derivation columns",
+        "(table_a1_trend_parameters.csv) are regenerated from the analysis code",
+        "with `make trend-tables`.",
     ]
     display = pd.DataFrame({"Age bracket": eng.BRACKETS})
     indexed = params_df.set_index(["trend", "age_bracket"])
@@ -232,9 +233,16 @@ def _parameters_markdown(params_df: pd.DataFrame, start_year: int) -> str:
         display[label] = [f"{value * 100:+.2f}" for value in group["relative_annual_change"]]
         change_columns.append(label)
         rates_2022 = [f"{value * 100:.1f}" for value in group[f"person_any_rate_{start_year}"]]
+        hh_any = [f"{value * 100:.1f}" for value in group[f"household_any_rate_{start_year}"]]
+        hh_phys = [f"{value * 100:.1f}" for value in group[f"household_physical_rate_{start_year}"]]
     for prior_year, values in sorted(prior_columns):
         display.insert(len(display.columns) - len(change_columns), f"Any {prior_year} (%)", values)
-    display.insert(len(display.columns) - len(change_columns), f"Any {start_year} (%)", rates_2022)
+    for label, values in [
+        (f"Any {start_year} (%)", rates_2022),
+        (f"HH any {start_year} (%)", hh_any),
+        (f"HH physical {start_year} (%)", hh_phys),
+    ]:
+        display.insert(len(display.columns) - len(change_columns), label, values)
     sections += ["", _markdown_table(display)]
     return "\n".join(sections) + "\n"
 
