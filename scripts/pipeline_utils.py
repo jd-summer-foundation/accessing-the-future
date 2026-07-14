@@ -24,7 +24,13 @@ RATE_MOTOR_COL = "DIP_physical"
 RATE_MOE_SUFFIX = "_moe"
 INMOVER_COL = "Of those who have length of tenure <1 year, what proportion are in each age bucket?"
 
-TENURE_BUCKETS = ["<1", "1-2", "2-3", "3-4", "5-9", "10-19", "20+"]
+# Exact-duration spans of the ABS Table 2.2 length-of-tenure categories.
+# The published labels count completed years ("less than 1 year", "1 year",
+# "2 years", "3 to 4 years", "5 to 9 years", "10 to 19 years", "20 years or
+# more"), so the categories cover [0,1), [1,2), [2,3), [3,5), [5,10),
+# [10,20) and [20,inf) exact years. The engine samples uniformly within each
+# span, so the labels below encode the span bounds rather than the ABS labels.
+TENURE_BUCKETS = ["<1", "1-2", "2-3", "3-5", "5-10", "10-20", "20+"]
 TENURE_COLUMNS = [
     "Length of tenure: less than 1 year  (% of all households, not count)",
     "Length of tenure: 1-2 years",

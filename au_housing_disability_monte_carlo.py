@@ -93,7 +93,7 @@ class AllRates:
 class TenureDist:
     """
     Tenure distribution buckets (strings) + probability list per age bracket.
-    Example buckets: ["<1","1-2","2-3","3-4","5-9","10-19","20+"]
+    Example buckets: ["<1","1-2","2-3","3-5","5-10","10-20","20+"]
     """
     buckets: List[str]
     probs_by_bracket: Dict[str, List[float]]
@@ -499,7 +499,7 @@ def sample_tenure_years(bucket: str, rng: np.random.Generator) -> float:
     """
     Convert a tenure bucket label into a sampled tenure duration in years.
     Bucket format examples:
-      "<1", "1-2", "2-3", "3-4", "5-9", "10-19", "20+"
+      "<1", "1-2", "2-3", "3-5", "5-10", "10-20", "20+"
     """
     b = bucket.strip()
     if b.startswith("<"):
