@@ -171,6 +171,15 @@ Run the automated test suite with:
 python3 -m pytest
 ```
 
+## Licensing
+
+This repository carries two licences, and they cover different things:
+
+- Code and derived work authored here: CC0 1.0, see [LICENSE](LICENSE).
+- Raw ABS source data in `data/raw/`: Creative Commons Attribution 4.0 International (CC BY 4.0), which requires attribution.
+
+Per-file licensing and the exact attribution wording the ABS requires are documented in [data/README.md](data/README.md#licensing-and-attribution). Because the ABS attribution condition travels with the source data, an archival deposit that bundles `data/raw/` should be recorded under CC BY 4.0 rather than CC0.
+
 ## Citation and Archival Metadata
 
 - Citation metadata: [CITATION.cff](CITATION.cff)
