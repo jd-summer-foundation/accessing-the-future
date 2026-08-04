@@ -1,13 +1,13 @@
 {
   "title": "Accessing the Future: Reproducible Monte Carlo Housing Disability Model",
   "upload_type": "software",
-  "description": "A reproducible research workflow for deriving model inputs from SDAC22 source data, running the housing disability Monte Carlo model, and generating manuscript-facing tables and figures.",
+  "description": "A reproducible research workflow for deriving model inputs from SDAC22 source data, running the housing disability Monte Carlo model, and generating manuscript-facing tables and figures. Code authored in this repository is released under CC0 1.0. This deposit also bundles Australian Bureau of Statistics source workbooks licensed CC BY 4.0, so the deposit as a whole is recorded under CC BY 4.0; attribution requirements are documented in data/README.md. Based on Australian Bureau of Statistics data.",
   "creators": [
     {
       "name": "Dignam, Joel"
     }
   ],
-  "license": "other-open",
+  "license": "cc-by-4.0",
   "keywords": [
     "housing",
     "disability",

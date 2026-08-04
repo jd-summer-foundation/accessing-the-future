@@ -24,8 +24,14 @@ def _make_minimal_release_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     _write_text(
         repo / "README.md",
-        "# Accessing the Future\n\nRun `make reproduce` and `make release-check` before release.\n",
+        "# Accessing the Future\n\nRun `make reproduce` and `make release-check` before release.\n\n## Licensing\n\nCode CC0 1.0; ABS source data CC BY 4.0.\n",
     )
+    _write_text(repo / "LICENSE", "CC0 1.0 Universal\n")
+    _write_text(
+        repo / "data/README.md",
+        "# Data Layout\n\n## Licensing and attribution\n\n`source.xlsx` is ABS material licensed CC BY 4.0.\n",
+    )
+    _write_text(repo / "data/raw/source.xlsx", "raw\n")
     _write_text(
         repo / "docs/release.md",
         "# Release Checklist\n\nRun `make release-check`.\n",
@@ -37,6 +43,7 @@ def _make_minimal_release_repo(tmp_path: Path) -> Path:
                 'cff-version: 1.2.0',
                 'title: "Accessing the Future: Reproducible Monte Carlo Housing Disability Model"',
                 'version: "0.1.0"',
+                "license: CC0-1.0",
                 "authors:",
                 "  - family-names: Dignam",
                 "    given-names: Joel",
@@ -49,6 +56,7 @@ def _make_minimal_release_repo(tmp_path: Path) -> Path:
         {
             "title": "Accessing the Future: Reproducible Monte Carlo Housing Disability Model",
             "creators": [{"name": "Dignam, Joel"}],
+            "license": "cc-by-4.0",
         },
     )
     _write_text(
@@ -122,8 +130,29 @@ def test_validate_release_rejects_metadata_mismatch(tmp_path: Path) -> None:
         {
             "title": "Different title",
             "creators": [{"name": "Dignam, Joel"}],
+            "license": "cc-by-4.0",
         },
     )
 
     with pytest.raises(ValueError, match="title must match"):
+        validate_release(repo)
+
+
+def test_validate_release_rejects_placeholder_license(tmp_path: Path) -> None:
+    repo = _make_minimal_release_repo(tmp_path)
+    citation_path = repo / "CITATION.cff"
+    _write_text(
+        citation_path,
+        citation_path.read_text(encoding="utf-8").replace("license: CC0-1.0", 'license: "See LICENSE"'),
+    )
+
+    with pytest.raises(ValueError, match="SPDX license identifier"):
+        validate_release(repo)
+
+
+def test_validate_release_rejects_undocumented_raw_source(tmp_path: Path) -> None:
+    repo = _make_minimal_release_repo(tmp_path)
+    _write_text(repo / "data/raw/undocumented_cube.xlsx", "raw\n")
+
+    with pytest.raises(ValueError, match="undocumented_cube.xlsx"):
         validate_release(repo)

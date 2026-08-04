@@ -38,7 +38,12 @@ EXPECTED_BASELINE_ARTIFACTS = [
     "data/processed/construction_index.csv",
     "CITATION.cff",
     ".zenodo.json",
+    "LICENSE",
+    "data/README.md",
 ]
+
+# CITATION.cff requires an SPDX identifier; free-text pointers do not validate.
+PLACEHOLDER_LICENSES = {"", "see license", "see license file", "other", "tbd"}
 
 EXPECTED_REPORT_ARTIFACTS = [
     "figures/figure_01_ever_probabilities.png",
@@ -77,6 +82,13 @@ def _ensure(condition: bool, message: str, failures: list[str]) -> None:
         failures.append(message)
 
 
+def _raw_source_files(repo_root: Path) -> list[str]:
+    raw_dir = repo_root / "data/raw"
+    if not raw_dir.is_dir():
+        return []
+    return sorted(path.name for path in raw_dir.iterdir() if path.is_file())
+
+
 def validate_release(repo_root: Path) -> None:
     citation_path = repo_root / "CITATION.cff"
     zenodo_path = repo_root / ".zenodo.json"
@@ -93,6 +105,8 @@ def validate_release(repo_root: Path) -> None:
     reports_manifest = _load_json(reports_manifest_path)
     readme_text = readme_path.read_text(encoding="utf-8")
     release_doc_text = release_doc_path.read_text(encoding="utf-8")
+    data_readme_path = repo_root / "data/README.md"
+    data_readme_text = data_readme_path.read_text(encoding="utf-8") if data_readme_path.exists() else ""
 
     project = pyproject.get("project", {})
     if not isinstance(project, dict):
@@ -123,6 +137,26 @@ def validate_release(repo_root: Path) -> None:
     _ensure("make reproduce" in readme_text, "README.md must document make reproduce", failures)
     _ensure("make release-check" in readme_text, "README.md must document make release-check", failures)
     _ensure("make release-check" in release_doc_text, "docs/release.md must include the release-check command", failures)
+
+    citation_license = citation.get("license")
+    _ensure(
+        isinstance(citation_license, str) and citation_license.strip().lower() not in PLACEHOLDER_LICENSES,
+        "CITATION.cff must declare an SPDX license identifier, not a free-text placeholder",
+        failures,
+    )
+    _ensure(bool(zenodo.get("license")), ".zenodo.json must declare a license", failures)
+    _ensure("## Licensing" in readme_text, "README.md must include a Licensing section", failures)
+    _ensure(
+        "## Licensing and attribution" in data_readme_text,
+        "data/README.md must include a licensing and attribution section",
+        failures,
+    )
+    for raw_name in _raw_source_files(repo_root):
+        _ensure(
+            raw_name in data_readme_text,
+            f"data/README.md must document licensing for raw source file: {raw_name}",
+            failures,
+        )
 
     for relative_path in EXPECTED_BASELINE_ARTIFACTS:
         _ensure((repo_root / relative_path).exists(), f"Required release artifact is missing: {relative_path}", failures)
