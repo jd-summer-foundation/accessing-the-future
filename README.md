@@ -106,6 +106,7 @@ make smoke
 - `data/processed/dwelling_mix.csv`
 - `results/<run_name>/scenario_summaries.csv`
 - `results/<run_name>/first_occupancy_cdf.csv` — cumulative share of dwellings first occupied by a household with a physical/any disability, by year since build
+- `results/<run_name>/first_occupancy_channels.csv` — the same first occupancies split by the event that produced them (`initial`, `replacement`, `onset`), with each channel's share of all dwellings and of the rise above initial occupancy
 - `results/<run_name>/inputs_used.csv`
 - `results/<run_name>/profiles_used.csv`
 - `results/<run_name>/run_manifest.json`
@@ -122,6 +123,7 @@ make smoke
 
 - Fixed defaults for the baseline run live in [configs/baseline.yaml](configs/baseline.yaml): `seed=123`, `n_props=50000`, `horizon_years=20`, `start_year=2022` (the SDAC base year the trend projection is anchored to).
 - Households age one year at a time. Disability acquisition is tested every year of age against prevalence linearly interpolated between bracket midpoint ages, and a new household's initial status is seeded from the interpolated rate at its exact age.
+- First-occupancy channels record which event first brought a qualifying household into a dwelling, and are attribution rather than counterfactual: a dwelling counted under `replacement` might still have qualified later through `onset` had the household not moved. Tracking them draws no random numbers, so enabling the output leaves every other result unchanged.
 - `make verify-data` checks the canonical raw workbooks listed in [data/checksums.sha256](data/checksums.sha256) before rebuilds.
 - The processed CSV is deterministic and is validated against the current raw-source derivation on every `make validate-data`.
 - The run manifest records commit hash, dependency versions, input checksum, config checksum, and runtime parameters.

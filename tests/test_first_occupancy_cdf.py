@@ -46,3 +46,24 @@ def test_first_occupancy_tracking_does_not_disturb_other_outputs() -> None:
 
     for key, value in without.items():
         assert with_cdf[key] == value
+
+
+def test_first_occupancy_channels_partition_p_ever() -> None:
+    rates, tenure, inmovers = _sim_inputs()
+    params = eng.SimParams(n_props=800, horizon_years=12, seed=7)
+    results = eng.run_sim(params, rates, tenure, inmovers, return_first_occupancy=True)
+
+    for category in ("any", "physical"):
+        channels = results[f"first_occupancy_channels_{category}"]
+        assert sorted(channels) == sorted(eng.CHANNELS)
+        assert all(0.0 <= share <= 1.0 for share in channels.values())
+        # The channels partition the ever-occupancy probability exactly: every dwelling
+        # that reaches the category did so through exactly one recorded event.
+        assert sum(channels.values()) == pytest.approx(results[f"p_ever_{category}"], abs=1e-12)
+        # Year 0 of the CDF is the first household qualifying at move-in, which is
+        # what the initial channel counts.
+        assert channels["initial"] == pytest.approx(
+            results[f"first_occupancy_cdf_{category}"][0], abs=0.0
+        )
+        # Every channel is exercised by these inputs, so the split is not degenerate.
+        assert all(share > 0.0 for share in channels.values())

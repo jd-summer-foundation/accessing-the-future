@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 EXPECTED_BASELINE_ARTIFACTS = [
     "results/baseline/scenario_summaries.csv",
     "results/baseline/first_occupancy_cdf.csv",
+    "results/baseline/first_occupancy_channels.csv",
     "results/baseline/inputs_used.csv",
     "results/baseline/profiles_used.csv",
     "results/baseline/run_manifest.json",
@@ -167,8 +168,14 @@ def validate_release(repo_root: Path) -> None:
 
     if isinstance(baseline_outputs, dict):
         checksums = baseline_outputs.get("artifact_checksums", {})
-        expected_output_keys = ["first_occupancy_cdf.csv", "inputs_used.csv", "profiles_used.csv", "scenario_summaries.csv"]
-        _ensure(sorted(checksums.keys()) == expected_output_keys, "Baseline run manifest must checksum the four canonical run artifacts", failures)
+        expected_output_keys = [
+            "first_occupancy_cdf.csv",
+            "first_occupancy_channels.csv",
+            "inputs_used.csv",
+            "profiles_used.csv",
+            "scenario_summaries.csv",
+        ]
+        _ensure(sorted(checksums.keys()) == expected_output_keys, "Baseline run manifest must checksum the five canonical run artifacts", failures)
     else:
         failures.append("Baseline run manifest outputs section must be a mapping")
 

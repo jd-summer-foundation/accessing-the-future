@@ -21,6 +21,8 @@ Outputs (summary dict):
 - optionally: mean % of time a dwelling is occupied by a household with each category
 - optionally: first-occupancy CDFs (share of dwellings first occupied by a household
   with each category by year y, for y = 0..horizon_years)
+- optionally: first-occupancy channel shares, splitting the CDF's final value by the
+  event that first brought a qualifying household into the dwelling
 """
 
 from __future__ import annotations
@@ -62,6 +64,21 @@ BRACKET_MIDPOINT_AGES: Dict[str, float] = {
 TREND_TYPES: Tuple[str, ...] = ("none", "sdac_2003_2022_trend", "sdac_2015_2022_trend")
 
 DEFAULT_HORIZON_YEARS = 20
+
+# Channels for first qualifying occupancy: the event that first brought a household
+# with the category into the dwelling.
+# "initial":     the dwelling's first household already has the category at move-in.
+# "replacement": a later household already has the category when it moves in.
+# "onset":       a sitting household acquires the category during its tenure, at either
+#                a birthday (ageing) or a calendar update (projected rate change).
+# The three shares partition p_ever_* exactly; the remainder never reaches the
+# category within the horizon. Attribution records the event through which the
+# category was first reached; it is not a counterfactual.
+CHANNELS: Tuple[str, ...] = ("initial", "replacement", "onset")
+CHANNEL_INITIAL = 0
+CHANNEL_REPLACEMENT = 1
+CHANNEL_ONSET = 2
+CHANNEL_NEVER = -1
 
 
 # -------------------------------------------------------------------
@@ -542,6 +559,10 @@ def run_sim(
     first household already has the category at move-in). The final entry
     equals p_ever_* by construction. Tracking first-occupancy times draws no
     random numbers, so enabling it leaves all other outputs unchanged.
+
+    The same flag adds "first_occupancy_channels_any" / "first_occupancy_channels_physical":
+    dicts keyed by CHANNELS giving the share of dwellings whose first qualifying
+    occupancy arrived through each event. The three shares sum to p_ever_* exactly.
     """
 
     rng = np.random.default_rng(params.seed)
@@ -594,13 +615,20 @@ def run_sim(
     first_any_time = np.full(params.n_props, np.inf)
     first_phys_time = np.full(params.n_props, np.inf)
 
-    def note_occupancy_state(i: int, t: float, any_d: bool, phys_d: bool) -> None:
+    # Event that first brought a qualifying household into each dwelling; NEVER if
+    # the category is not reached within the horizon. See CHANNELS for the labels.
+    first_any_channel = np.full(params.n_props, CHANNEL_NEVER, dtype=np.int8)
+    first_phys_channel = np.full(params.n_props, CHANNEL_NEVER, dtype=np.int8)
+
+    def note_occupancy_state(i: int, t: float, any_d: bool, phys_d: bool, channel: int) -> None:
         if any_d and not ever_any[i]:
             ever_any[i] = True
             first_any_time[i] = t
+            first_any_channel[i] = channel
         if phys_d and not ever_phys[i]:
             ever_phys[i] = True
             first_phys_time[i] = t
+            first_phys_channel[i] = channel
 
     time_any = np.zeros(params.n_props)
     time_phys = np.zeros(params.n_props)
@@ -633,7 +661,7 @@ def run_sim(
         # Seed first household statuses from interpolated prevalence at exact age
         any_d, phys_d = _seed_household_state_at_age(age_year, current_snapshot.profiles, rng)
 
-        note_occupancy_state(i, t, any_d, phys_d)
+        note_occupancy_state(i, t, any_d, phys_d, CHANNEL_INITIAL)
 
         # Dwelling occupancy lifecycle
         while t < float(params.horizon_years):
@@ -681,7 +709,7 @@ def run_sim(
                         any_d,
                         phys_d,
                     )
-                    note_occupancy_state(i, t, any_d, phys_d)
+                    note_occupancy_state(i, t, any_d, phys_d, CHANNEL_ONSET)
 
                 # If the household has aged a year, apply the annual acquisition check.
                 # Calendar-time transitions are processed first when both happen at the same instant.
@@ -696,7 +724,7 @@ def run_sim(
                     age_year += 1
                     br = _bracket_for_age(age_year)
                     yrs_to_birthday = 1.0
-                    note_occupancy_state(i, t, any_d, phys_d)
+                    note_occupancy_state(i, t, any_d, phys_d, CHANNEL_ONSET)
 
             # Tenure ended -> household moves out -> new household moves in
             if t < float(params.horizon_years):
@@ -707,7 +735,7 @@ def run_sim(
 
                 any_d, phys_d = _seed_household_state_at_age(age_year, current_snapshot.profiles, rng)
 
-                note_occupancy_state(i, t, any_d, phys_d)
+                note_occupancy_state(i, t, any_d, phys_d, CHANNEL_REPLACEMENT)
 
     results: Dict[str, object] = {
         "p_ever_any": float(ever_any.mean()),
@@ -728,5 +756,11 @@ def run_sim(
             "first_occupancy_cdf_any": [float((first_any_time <= y).mean()) for y in years],
             "first_occupancy_cdf_physical": [float((first_phys_time <= y).mean()) for y in years],
         })
+        codes = (CHANNEL_INITIAL, CHANNEL_REPLACEMENT, CHANNEL_ONSET)
+        for category, channels in (("any", first_any_channel), ("physical", first_phys_channel)):
+            results[f"first_occupancy_channels_{category}"] = {
+                name: float((channels == code).mean())
+                for name, code in zip(CHANNELS, codes)
+            }
 
     return results

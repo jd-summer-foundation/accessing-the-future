@@ -74,6 +74,7 @@ def _make_minimal_release_repo(tmp_path: Path) -> Path:
     for relative_path in [
         "results/baseline/scenario_summaries.csv",
         "results/baseline/first_occupancy_cdf.csv",
+        "results/baseline/first_occupancy_channels.csv",
         "results/baseline/inputs_used.csv",
         "results/baseline/profiles_used.csv",
         "reports/tables/table_01_scenario_summary.csv",
@@ -97,6 +98,7 @@ def _make_minimal_release_repo(tmp_path: Path) -> Path:
             "outputs": {
                 "artifact_checksums": {
                     "first_occupancy_cdf.csv": "a",
+                    "first_occupancy_channels.csv": "e",
                     "inputs_used.csv": "b",
                     "profiles_used.csv": "c",
                     "scenario_summaries.csv": "d",

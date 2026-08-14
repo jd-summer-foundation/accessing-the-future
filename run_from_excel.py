@@ -322,6 +322,7 @@ def _write_manifest(runtime: Dict[str, object], scenario_summaries: pd.DataFrame
     ]
     if runtime["return_first_occupancy"]:
         output_paths.append(Path(output_dir) / "first_occupancy_cdf.csv")
+        output_paths.append(Path(output_dir) / "first_occupancy_channels.csv")
 
     manifest = {
         "generated_at_utc": utc_now_iso(),
@@ -394,6 +395,7 @@ def main() -> None:
 
     summaries = []
     first_occupancy_rows = []
+    channel_rows = []
     resolved_scenarios = []
     for scenario in runtime["scenarios"]:
         if not isinstance(scenario, dict):
@@ -453,6 +455,7 @@ def main() -> None:
             )
             for category in ("any", "physical"):
                 cdf = summary.pop(f"first_occupancy_cdf_{category}", None)
+                channels = summary.pop(f"first_occupancy_channels_{category}", None)
                 if cdf is None:
                     continue
                 first_occupancy_rows.extend(
@@ -464,6 +467,25 @@ def main() -> None:
                         "cum_share_first_occupancy": share,
                     }
                     for year, share in enumerate(cdf)
+                )
+                if channels is None:
+                    continue
+                # Growth is the rise above initial occupancy; the replacement and onset
+                # shares of it are the decomposition reported in the paper.
+                growth = float(cdf[-1]) - float(channels["initial"])
+                channel_rows.extend(
+                    {
+                        "scenario": output_scenario_name,
+                        "uncertainty_case": uncertainty_case,
+                        "category": category,
+                        "channel": channel,
+                        "share_of_dwellings": float(channels[channel]),
+                        "share_of_growth": (
+                            "" if channel == "initial" or growth <= 0.0
+                            else float(channels[channel]) / growth
+                        ),
+                    }
+                    for channel in eng.CHANNELS
                 )
             summaries.append({
                 "scenario": output_scenario_name,
@@ -488,6 +510,7 @@ def main() -> None:
     summary_df.to_csv(output_dir / "scenario_summaries.csv", index=False)
     if runtime["return_first_occupancy"]:
         pd.DataFrame(first_occupancy_rows).to_csv(output_dir / "first_occupancy_cdf.csv", index=False)
+        pd.DataFrame(channel_rows).to_csv(output_dir / "first_occupancy_channels.csv", index=False)
     runtime["resolved_scenarios"] = resolved_scenarios
     _write_manifest(runtime, summary_df)
 
